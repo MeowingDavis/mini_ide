@@ -1,0 +1,129 @@
+.ai-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(11, 17, 31, 0.75);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-label {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ai-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-input,
+.ai-select,
+.ai-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.ai-select {
+  max-width: 100%;
+}
+
+.ai-textarea {
+  resize: vertical;
+  min-height: 96px;
+  font-family: inherit;
+}
+
+.ai-status {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.ai-toggles {
+  gap: 10px;
+}
+
+.ai-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.ai-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.ai-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ai-response {
+  min-height: 220px;
+}
+
+.ai-response-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ai-response-text,
+.ai-runtime-context pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.ai-response-text {
+  min-height: 120px;
+}
+
+.ai-runtime-context {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(11, 17, 31, 0.75);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-error {
+  border: 1px solid color-mix(in srgb, var(--danger) 50%, var(--border));
+  border-radius: var(--radius-md);
+  background: rgba(248, 113, 113, 0.09);
+  color: #fecaca;
+  padding: 10px;
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .ai-actions {
+    grid-template-columns: 1fr;
+  }
+}
