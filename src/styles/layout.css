@@ -23,6 +23,45 @@
   gap: 0;
 }
 
+.editor-workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--space-3);
+  min-height: 0;
+  flex: 1;
+}
+
+.editor-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.editor-side-resizer {
+  width: 8px;
+  cursor: col-resize;
+  position: relative;
+  align-self: stretch;
+}
+
+.editor-side-resizer::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 24%, var(--border));
+  opacity: 0.5;
+}
+
+.editor-side-resizer:hover::before {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 48%, var(--border));
+}
+
 .editor-surface,
 .preview-surface,
 .console-surface {
@@ -96,5 +135,17 @@
   .panel-ai {
     min-height: 500px;
     grid-column: auto;
+  }
+
+  .editor-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .explorer-panel {
+    max-height: 220px;
+  }
+
+  .editor-side-resizer {
+    display: none;
   }
 }

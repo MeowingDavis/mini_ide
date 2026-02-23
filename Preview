@@ -1,0 +1,14 @@
+66:  const previewPopoutRef = useRef(null);
+143:    const popout = previewPopoutRef.current;
+146:        previewPopoutRef.current = null;
+181:        if (event.source !== previewPopoutRef.current) {
+215:  const handlePopoutPreview = () => {
+216:    let popout = previewPopoutRef.current;
+226:      previewPopoutRef.current = popout;
+228:        if (previewPopoutRef.current === popout) {
+229:          previewPopoutRef.current = null;
+730:              <span className="toolbar-cluster-label">Windows</span>
+771:              <span className="toolbar-cluster-label">Preview</span>
+784:                  onClick={handlePopoutPreview}
+810:              <span className="toolbar-cluster-label">Project</span>
+931:          <section className="panel panel-preview">

@@ -1,7 +1,8 @@
 .ai-panel-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: visible;
   padding: 10px;
   display: flex;
   flex-direction: column;

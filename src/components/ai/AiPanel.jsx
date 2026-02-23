@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import UiIcon from '../UiIcon';
 import PromptBox from './PromptBox';
 import ResponseView from './ResponseView';
 import useAiSettings from '../../hooks/useAiSettings';
@@ -38,7 +39,7 @@ function parseModelList(value) {
     .filter(Boolean);
 }
 
-function AiPanel() {
+function AiPanel({ onClose, onZoom }) {
   const { settings, setSetting } = useAiSettings();
   const assistantMode = 'chat';
   const { uploadedDocs, addFiles, removeDoc } = useUploadedDocs();
@@ -536,7 +537,26 @@ function AiPanel() {
   return (
     <aside className="panel panel-ai">
       <div className="panel-header">
-        <h2 className="panel-title">Leaf chat</h2>
+        <div className="panel-window-controls" role="toolbar" aria-label="Leaf chat window controls">
+          <button
+            type="button"
+            className="window-control window-control-close"
+            onClick={onClose}
+            aria-label="Close Leaf chat window"
+            title="Close Leaf chat window"
+          />
+          <button
+            type="button"
+            className="window-control window-control-zoom"
+            onClick={onZoom}
+            aria-label="Enlarge Leaf chat window"
+            title="Enlarge Leaf chat window"
+          />
+        </div>
+        <h2 className="panel-title">
+          <UiIcon name="chat" className="panel-title-icon" />
+          <span className="panel-title-text">Leaf chat</span>
+        </h2>
       </div>
 
       <div className="panel-body ai-panel-body">
