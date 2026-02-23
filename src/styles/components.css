@@ -8,11 +8,23 @@
   border-bottom: 1px solid var(--border);
 }
 
+.brand-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .brand {
   font-size: var(--fs-xl);
   letter-spacing: 0.04em;
   font-weight: 600;
   color: var(--text);
+}
+
+.brand-subtitle {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.03em;
 }
 
 .header-actions {
@@ -21,6 +33,62 @@
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: var(--space-2);
+  row-gap: 10px;
+}
+
+.toolbar-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.05));
+}
+
+.toolbar-cluster-label {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.toolbar-cluster-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.toolbar-toggle {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #1c2027;
+}
+
+.window-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.header-feedback {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper-2));
+  color: #d9e3fb;
+  font-size: 12px;
+  max-width: min(420px, 100%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .panel {
@@ -51,6 +119,61 @@
   padding: var(--space-3);
 }
 
+.panel-resizer {
+  position: absolute;
+  top: 0;
+  right: -6px;
+  width: 12px;
+  height: 100%;
+  z-index: 8;
+  cursor: col-resize;
+}
+
+.panel-resizer::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.panel:hover > .panel-resizer::after,
+.panel-resizer:hover::after {
+  opacity: 1;
+}
+
+.panel-resizer-inline {
+  position: relative;
+  z-index: 4;
+}
+
+.panel-resizer-horizontal {
+  height: 8px;
+  cursor: row-resize;
+}
+
+.panel-resizer-horizontal::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 26%, var(--border));
+}
+
+.panel-resizer-horizontal:hover::before {
+  background: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
 .panel-footer {
   display: flex;
   align-items: center;
@@ -68,6 +191,15 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.panel-empty-state {
+  grid-column: 1 / -1;
+}
+
+.empty-state-note {
+  color: var(--muted);
+  font-size: var(--fs-sm);
 }
 
 .panel-subheader {
@@ -497,6 +629,26 @@
   border-style: dashed;
 }
 
+.ai-chat-inline-edits {
+  margin-left: 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-chat-inline-edits-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-chat-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .ai-prompt-box {
   background:
     radial-gradient(circle at bottom right, rgba(144, 167, 216, 0.06), transparent 42%),
@@ -783,6 +935,10 @@
     font-size: 9px;
   }
 
+  .ai-chat-inline-edits {
+    margin-left: 30px;
+  }
+
   .ai-composer-row {
     grid-template-columns: auto 1fr;
   }
@@ -815,5 +971,34 @@
   .header-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .header-feedback {
+    max-width: 100%;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .window-toggle-group {
+    width: 100%;
+    order: -1;
+  }
+
+  .toolbar-cluster {
+    width: 100%;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .toolbar-cluster-actions {
+    width: 100%;
+  }
+}
+
+@media (max-width: 1260px) {
+  .panel-resizer-desktop-only,
+  .panel-resizer-right {
+    display: none;
   }
 }

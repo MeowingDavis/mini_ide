@@ -1,19 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PromptBox from './PromptBox';
 import ResponseView from './ResponseView';
-import EditPlanView from './EditPlanView';
 import useAiSettings from '../../hooks/useAiSettings';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useUploadedDocs from '../../hooks/useUploadedDocs';
 import { buildAiPrompt } from '../../lib/buildAiPrompt';
+import { CHAT_MODE_EDIT_PROMPT, SYSTEM_PROMPT } from '../../lib/aiPrompts';
 import { tryExtractEdits } from '../../lib/aiEdits';
 import { chat, listModels, testConnection } from '../../lib/ollamaClient';
 import { useIdeContext } from '../../app/IdeContext';
-
-const SYSTEM_PROMPT =
-  'You are Leaf chat, an expert frontend coding assistant. Be concise. Default to short answers. When a user asks for a code change, keep the visible reply brief and practical. Do not add filler like "let me know what you prefer."';
-const CHAT_MODE_EDIT_PROMPT =
-  'In chat mode: answer concisely. When the user asks for code changes, include a JSON block with shape {"summary":"short","edits":[{"file":"index.html|styles.css|main.js","content":"full file text"}]} so the UI can offer manual Apply buttons. If you include edits JSON, do not repeat the full code outside the JSON block. Keep visible prose to a short summary (1-2 sentences max). Do not ask for permission to manually edit vs JSON unless the user asks.';
 
 const ACTION_INSTRUCTIONS = {
   ask: '',
@@ -513,6 +508,19 @@ function AiPanel() {
     }
   };
 
+  const handleCopyEdit = async (edit) => {
+    if (!edit?.content) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(edit.content);
+      setStatusMessage(`Copied ${edit.file}.`);
+    } catch {
+      setPanelError('Clipboard copy failed.');
+    }
+  };
+
   const handleProviderChange = (nextProvider) => {
     if (nextProvider === activeProvider) {
       return;
@@ -538,16 +546,11 @@ function AiPanel() {
           isBusy={isAsking}
           onCopy={handleCopyResponse}
           mode={assistantMode}
-        />
-
-        <EditPlanView
-          visible={pendingEdits.length > 0}
-          title="Suggested Edits"
-          planSummary={editSummary}
-          edits={pendingEdits}
-          onApplyAll={applyAllEdits}
-          onApplySingle={applySingleEdit}
-          disabled={isAsking}
+          pendingEdits={pendingEdits}
+          editSummary={editSummary}
+          onApplyAllEdits={applyAllEdits}
+          onApplySingleEdit={applySingleEdit}
+          onCopyEdit={handleCopyEdit}
         />
 
         {panelError ? <div className="ai-error">{panelError}</div> : null}

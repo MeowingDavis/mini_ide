@@ -49,8 +49,8 @@
 
 .panel-body-preview {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) minmax(170px, 0.38fr);
-  gap: var(--space-3);
+  grid-template-rows: minmax(0, 0.68fr) 8px minmax(140px, 0.32fr);
+  gap: 0;
 }
 
 .preview-frame {
@@ -61,7 +61,7 @@
 }
 
 .panel-ai {
-  grid-column: 3;
+  grid-column: auto;
 }
 
 @media (max-width: 1260px) {
