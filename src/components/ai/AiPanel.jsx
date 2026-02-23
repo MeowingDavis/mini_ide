@@ -11,9 +11,9 @@ import { chat, listModels, testConnection } from '../../lib/ollamaClient';
 import { useIdeContext } from '../../app/IdeContext';
 
 const SYSTEM_PROMPT =
-  'You are Leaf chat, an expert frontend coding assistant. Be concise. Default to short answers. When a user asks for a code change, give the suggested code first, then a brief note only if needed. Do not add filler like "let me know what you prefer."';
+  'You are Leaf chat, an expert frontend coding assistant. Be concise. Default to short answers. When a user asks for a code change, keep the visible reply brief and practical. Do not add filler like "let me know what you prefer."';
 const CHAT_MODE_EDIT_PROMPT =
-  'In chat mode: answer concisely. When the user asks for code changes, include a short suggested code snippet in the response and also include a JSON block with shape {"summary":"short","edits":[{"file":"index.html|styles.css|main.js","content":"full file text"}]} so the UI can offer manual Apply buttons. Do not ask for permission to manually edit vs JSON unless the user asks.';
+  'In chat mode: answer concisely. When the user asks for code changes, include a JSON block with shape {"summary":"short","edits":[{"file":"index.html|styles.css|main.js","content":"full file text"}]} so the UI can offer manual Apply buttons. If you include edits JSON, do not repeat the full code outside the JSON block. Keep visible prose to a short summary (1-2 sentences max). Do not ask for permission to manually edit vs JSON unless the user asks.';
 
 const ACTION_INSTRUCTIONS = {
   ask: '',
@@ -159,11 +159,6 @@ function AiPanel() {
     },
     []
   );
-
-  const latestConsoleContext = useMemo(() => {
-    const recent = consoleLogs.slice(-5).map((entry) => `[${entry.level}] ${entry.text}`);
-    return recent.join('\n');
-  }, [consoleLogs]);
 
   const handleRefreshModels = async () => {
     if (activeProvider === 'groq' && hasProvidedGroqModels) {
@@ -425,15 +420,23 @@ function AiPanel() {
       }
 
       const parsed = tryExtractEdits(assistantText, fileNames);
+      let visibleAssistantText = assistantText || 'No response returned.';
+
       if (parsed.edits.length > 0) {
+        visibleAssistantText =
+          parsed.summary ||
+          `Suggested ${parsed.edits.length} file edit${parsed.edits.length > 1 ? 's' : ''}. Review and apply below.`;
+
         setPendingEdits(parsed.edits);
         setEditSummary(parsed.summary || 'Suggested edits ready to review.');
+        setResponse(visibleAssistantText);
         setStatusMessage(
           `Generated ${parsed.edits.length} suggested edit${parsed.edits.length > 1 ? 's' : ''}.`
         );
       } else {
         setPendingEdits([]);
         setEditSummary('');
+        setResponse(assistantText || 'No response returned.');
       }
 
       const nextHistory = [
@@ -448,7 +451,7 @@ function AiPanel() {
           ...prev,
           {
             role: 'assistant',
-            content: assistantText || 'No response returned.'
+            content: visibleAssistantText
           }
         ].slice(-24)
       );
@@ -546,20 +549,6 @@ function AiPanel() {
           onApplySingle={applySingleEdit}
           disabled={isAsking}
         />
-
-        {lastRuntimeError ? (
-          <div className="ai-runtime-context">
-            <span className="ai-label">Last Runtime Error</span>
-            <pre>{lastRuntimeError}</pre>
-          </div>
-        ) : null}
-
-        {latestConsoleContext ? (
-          <div className="ai-runtime-context">
-            <span className="ai-label">Recent Console</span>
-            <pre>{latestConsoleContext}</pre>
-          </div>
-        ) : null}
 
         {panelError ? <div className="ai-error">{panelError}</div> : null}
 
