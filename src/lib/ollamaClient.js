@@ -10,6 +10,10 @@ function createFriendlyError(message, details = '') {
   return error;
 }
 
+function isAbortError(error) {
+  return error?.name === 'AbortError';
+}
+
 async function toFriendlyHttpError(response, provider) {
   const bodyText = await response.text().catch(() => '');
 
@@ -215,6 +219,10 @@ async function chatWithOllama(endpoint, model, messages, options = {}) {
       signal
     });
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+
     throw createFriendlyError(
       'Could not connect to Ollama chat API. Verify endpoint and CORS settings.',
       error.message
@@ -256,6 +264,10 @@ async function chatWithGroq(model, messages, options = {}) {
       signal
     });
   } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+
     throw createFriendlyError('Could not connect to the Groq proxy.', error.message);
   }
 

@@ -12,7 +12,7 @@ function EditPlanView({
   }
 
   return (
-    <div className="ai-section">
+    <div className="ai-section ai-suggested-edits">
       <div className="ai-edit-header">
         <span className="ai-label">{title}</span>
         <button type="button" className="btn btn-primary" onClick={onApplyAll} disabled={disabled}>
@@ -27,7 +27,7 @@ function EditPlanView({
           {edits.map((edit) => (
             <div key={edit.file} className="ai-edit-item">
               <div className="ai-edit-item-head">
-                <span>{edit.file}</span>
+                <span className="ai-edit-file">{edit.file}</span>
                 <button
                   type="button"
                   className="btn btn-ghost btn-small"

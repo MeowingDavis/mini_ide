@@ -1,26 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
-import AssistantModeSwitch from './AssistantModeSwitch';
-import EndpointInput from './EndpointInput';
-import ModelPicker from './ModelPicker';
-import ToggleRow from './ToggleRow';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import PromptBox from './PromptBox';
 import ResponseView from './ResponseView';
-import ContextFilesUpload from './ContextFilesUpload';
 import EditPlanView from './EditPlanView';
 import useAiSettings from '../../hooks/useAiSettings';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useUploadedDocs from '../../hooks/useUploadedDocs';
 import { buildAiPrompt } from '../../lib/buildAiPrompt';
-import { parseEditResponse, tryExtractEdits } from '../../lib/aiEdits';
+import { tryExtractEdits } from '../../lib/aiEdits';
 import { chat, listModels, testConnection } from '../../lib/ollamaClient';
 import { useIdeContext } from '../../app/IdeContext';
 
 const SYSTEM_PROMPT =
-  'You are an expert frontend assistant. Give practical, minimal patches and explain changes clearly.';
-const EDIT_MODE_SYSTEM_PROMPT =
-  'You are in edit mode. Return JSON only with shape: {"summary":"short", "edits":[{"file":"index.html|styles.css|main.js","content":"full file text"}]}.';
+  'You are Leaf chat, an expert frontend coding assistant. Be concise. Default to short answers. When a user asks for a code change, give the suggested code first, then a brief note only if needed. Do not add filler like "let me know what you prefer."';
 const CHAT_MODE_EDIT_PROMPT =
-  'In chat mode: answer normally, but when the user asks for code changes include a JSON block with shape {"summary":"short","edits":[{"file":"index.html|styles.css|main.js","content":"full file text"}]} so the UI can offer Apply buttons.';
+  'In chat mode: answer concisely. When the user asks for code changes, include a short suggested code snippet in the response and also include a JSON block with shape {"summary":"short","edits":[{"file":"index.html|styles.css|main.js","content":"full file text"}]} so the UI can offer manual Apply buttons. Do not ask for permission to manually edit vs JSON unless the user asks.';
 
 const ACTION_INSTRUCTIONS = {
   ask: '',
@@ -52,7 +45,8 @@ function parseModelList(value) {
 
 function AiPanel() {
   const { settings, setSetting } = useAiSettings();
-  const { uploadedDocs, addFiles, removeDoc, clearDocs } = useUploadedDocs();
+  const assistantMode = 'chat';
+  const { uploadedDocs, addFiles, removeDoc } = useUploadedDocs();
   const activeProvider = settings.provider === 'groq' ? 'groq' : 'ollama';
   const debouncedOllamaEndpoint = useDebouncedValue(settings.ollamaEndpoint, 350);
   const providedGroqModels = useMemo(
@@ -73,8 +67,10 @@ function AiPanel() {
 
   const [models, setModels] = useState([]);
   const [prompt, setPrompt] = useState('');
+  const [selectedAction, setSelectedAction] = useState('ask');
   const [response, setResponse] = useState('');
   const [chatHistory, setChatHistory] = useState([]);
+  const [uiMessages, setUiMessages] = useState([]);
   const [pendingEdits, setPendingEdits] = useState([]);
   const [editSummary, setEditSummary] = useState('');
   const [panelError, setPanelError] = useState('');
@@ -83,11 +79,7 @@ function AiPanel() {
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [isAsking, setIsAsking] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-
-  useEffect(() => {
-    setPendingEdits([]);
-    setEditSummary('');
-  }, [settings.mode]);
+  const activeRequestRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +151,14 @@ function AiPanel() {
     setSetting,
     settings.selectedModel
   ]);
+
+  useEffect(
+    () => () => {
+      activeRequestRef.current?.abort();
+      activeRequestRef.current = null;
+    },
+    []
+  );
 
   const latestConsoleContext = useMemo(() => {
     const recent = consoleLogs.slice(-5).map((entry) => `[${entry.level}] ${entry.text}`);
@@ -318,6 +318,10 @@ function AiPanel() {
     const actionInstruction = ACTION_INSTRUCTIONS[action] || '';
     const userQuestion = (rawQuestion || '').trim();
     const question = [actionInstruction, userQuestion].filter(Boolean).join('\n\n');
+    const userDisplayMessage =
+      action === 'ask'
+        ? userQuestion
+        : [actionLabel(action), userQuestion].filter(Boolean).join('\n\n');
 
     if (!question && action === 'ask') {
       setPanelError('Enter a prompt before asking the assistant.');
@@ -330,7 +334,7 @@ function AiPanel() {
       action,
       question,
       provider: activeProvider,
-      mode: settings.mode,
+      mode: assistantMode,
       model: settings.selectedModel,
       activeTab,
       selection,
@@ -345,9 +349,7 @@ function AiPanel() {
 
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
-      ...(settings.mode === 'edit'
-        ? [{ role: 'system', content: EDIT_MODE_SYSTEM_PROMPT }]
-        : [{ role: 'system', content: CHAT_MODE_EDIT_PROMPT }]),
+      { role: 'system', content: CHAT_MODE_EDIT_PROMPT },
       ...chatHistory,
       { role: 'user', content: userContent }
     ];
@@ -358,6 +360,17 @@ function AiPanel() {
     setResponse('');
     setPendingEdits([]);
     setEditSummary('');
+    setUiMessages((prev) => [
+      ...prev,
+      {
+        role: 'user',
+        content: userDisplayMessage || 'Ask about the current code'
+      }
+    ]);
+    setPrompt('');
+    const abortController = new AbortController();
+    activeRequestRef.current = abortController;
+    let streamedText = '';
 
     try {
       let assistantText = '';
@@ -373,8 +386,10 @@ function AiPanel() {
             {
               stream: true,
               onToken: (_, aggregated) => {
+                streamedText = aggregated;
                 setResponse(aggregated);
-              }
+              },
+              signal: abortController.signal
             }
           );
         } catch (streamError) {
@@ -385,7 +400,8 @@ function AiPanel() {
             settings.selectedModel,
             messages,
             {
-              stream: false
+              stream: false,
+              signal: abortController.signal
             }
           );
           setResponse(assistantText);
@@ -401,43 +417,23 @@ function AiPanel() {
           settings.selectedModel,
           messages,
           {
-            stream: false
+            stream: false,
+            signal: abortController.signal
           }
         );
         setResponse(assistantText);
       }
 
-      if (settings.mode === 'edit') {
-        const parsed = parseEditResponse(assistantText, fileNames);
-        if (parsed.error) {
-          setPanelError(parsed.error);
-        } else {
-          parsed.edits.forEach((edit) => {
-            setFileContent(edit.file, edit.content);
-          });
-
-          setActiveTab(parsed.edits[0].file);
-          setPendingEdits([]);
-          setEditSummary(parsed.summary);
-          if (parsed.summary) {
-            setResponse(parsed.summary);
-          }
-          setStatusMessage(
-            `Applied ${parsed.edits.length} edit${parsed.edits.length > 1 ? 's' : ''}.`
-          );
-        }
+      const parsed = tryExtractEdits(assistantText, fileNames);
+      if (parsed.edits.length > 0) {
+        setPendingEdits(parsed.edits);
+        setEditSummary(parsed.summary || 'Suggested edits ready to review.');
+        setStatusMessage(
+          `Generated ${parsed.edits.length} suggested edit${parsed.edits.length > 1 ? 's' : ''}.`
+        );
       } else {
-        const parsed = tryExtractEdits(assistantText, fileNames);
-        if (parsed.edits.length > 0) {
-          setPendingEdits(parsed.edits);
-          setEditSummary(parsed.summary || 'Proposed edits ready to apply.');
-          setStatusMessage(
-            `Generated ${parsed.edits.length} proposed edit${parsed.edits.length > 1 ? 's' : ''}.`
-          );
-        } else {
-          setPendingEdits([]);
-          setEditSummary('');
-        }
+        setPendingEdits([]);
+        setEditSummary('');
       }
 
       const nextHistory = [
@@ -447,14 +443,58 @@ function AiPanel() {
       ].slice(-16);
 
       setChatHistory(nextHistory);
-      if (action === 'ask') {
-        setPrompt('');
-      }
+      setUiMessages((prev) =>
+        [
+          ...prev,
+          {
+            role: 'assistant',
+            content: assistantText || 'No response returned.'
+          }
+        ].slice(-24)
+      );
     } catch (error) {
+      if (error?.name === 'AbortError' || abortController.signal.aborted) {
+        const partialText = (streamedText || '').trim();
+
+        if (partialText) {
+          setUiMessages((prev) =>
+            [
+              ...prev,
+              {
+                role: 'assistant',
+                content: partialText
+              }
+            ].slice(-24)
+          );
+          setChatHistory((prev) =>
+            [
+              ...prev,
+              { role: 'user', content: userContent },
+              { role: 'assistant', content: partialText }
+            ].slice(-16)
+          );
+        }
+
+        setStatusMessage('Response stopped.');
+        return;
+      }
+
       setPanelError(error.message || 'AI request failed.');
     } finally {
+      if (activeRequestRef.current === abortController) {
+        activeRequestRef.current = null;
+      }
       setIsAsking(false);
     }
+  };
+
+  const handleStopResponse = () => {
+    if (!activeRequestRef.current) {
+      return;
+    }
+
+    setStatusMessage('Stopping response...');
+    activeRequestRef.current.abort();
   };
 
   const handleCopyResponse = async () => {
@@ -485,118 +525,21 @@ function AiPanel() {
   return (
     <aside className="panel panel-ai">
       <div className="panel-header">
-        <h2 className="panel-title">AI Assistant</h2>
+        <h2 className="panel-title">Leaf chat</h2>
       </div>
 
       <div className="panel-body ai-panel-body">
-        <AssistantModeSwitch
-          mode={settings.mode}
-          onChange={(mode) => setSetting('mode', mode)}
-          disabled={isAsking}
-        />
-
-        <div className="ai-section">
-          <div className="ai-label">Provider</div>
-          <div className="ai-mode-switch ai-provider-switch">
-            <button
-              type="button"
-              className={`btn ${activeProvider === 'ollama' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => handleProviderChange('ollama')}
-              disabled={isAsking}
-            >
-              Local Ollama
-            </button>
-            <button
-              type="button"
-              className={`btn ${activeProvider === 'groq' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => handleProviderChange('groq')}
-              disabled={isAsking}
-            >
-              Online Groq
-            </button>
-          </div>
-
-          {activeProvider === 'groq' ? (
-            <>
-              {hasProvidedGroqModels ? (
-                <div className="ai-status">
-                  Using {providedGroqModels.length} provided online model
-                  {providedGroqModels.length !== 1 ? 's' : ''} from `.env`.
-                </div>
-              ) : null}
-              <div className="ai-row">
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={handleTestConnection}
-                  disabled={isTestingConnection}
-                >
-                  {isTestingConnection ? 'Testing...' : 'Test online connection'}
-                </button>
-              </div>
-              {statusMessage ? <div className="ai-status">{statusMessage}</div> : null}
-            </>
-          ) : null}
-        </div>
-
-        {activeProvider === 'ollama' ? (
-          <EndpointInput
-            label="Ollama Endpoint"
-            endpoint={settings.ollamaEndpoint}
-            placeholder="http://localhost:11434"
-            onChange={(value) => setSetting('ollamaEndpoint', value)}
-            onTest={handleTestConnection}
-            isTesting={isTestingConnection}
-            status={statusMessage}
-            testLabel="Test connection"
-          />
-        ) : null}
-
-        <ModelPicker
-          models={models}
-          selectedModel={settings.selectedModel}
-          onChange={(value) => setSetting('selectedModel', value)}
-          onRefresh={handleRefreshModels}
-          isLoading={isLoadingModels}
-          showRefresh={!(activeProvider === 'groq' && hasProvidedGroqModels)}
-        />
-
-        <ToggleRow
-          includeCode={settings.includeCode}
-          includeSelection={settings.includeSelection}
-          streaming={settings.streaming}
-          onChange={setSetting}
-        />
-
-        <ContextFilesUpload
-          uploadedDocs={uploadedDocs}
-          includeUploads={settings.includeUploads}
-          onIncludeUploadsChange={(value) => setSetting('includeUploads', value)}
-          onUpload={handleUploadFiles}
-          onRemove={removeDoc}
-          onClearAll={clearDocs}
-          isUploading={isUploading}
-        />
-
-        <PromptBox
-          prompt={prompt}
-          onPromptChange={setPrompt}
-          onAsk={() => handleAsk('ask', prompt)}
-          onAction={(action) => handleAsk(action, prompt)}
-          disabled={isAsking}
-          mode={settings.mode}
-        />
-
         <ResponseView
+          messages={uiMessages}
           response={response}
           isBusy={isAsking}
           onCopy={handleCopyResponse}
-          mode={settings.mode}
+          mode={assistantMode}
         />
 
         <EditPlanView
-          visible={settings.mode === 'chat' && pendingEdits.length > 0}
-          title="Chat Proposed Edits"
+          visible={pendingEdits.length > 0}
+          title="Suggested Edits"
           planSummary={editSummary}
           edits={pendingEdits}
           onApplyAll={applyAllEdits}
@@ -619,6 +562,41 @@ function AiPanel() {
         ) : null}
 
         {panelError ? <div className="ai-error">{panelError}</div> : null}
+
+        <PromptBox
+          prompt={prompt}
+          onPromptChange={setPrompt}
+          onSend={() => handleAsk(selectedAction, prompt)}
+          onStop={handleStopResponse}
+          disabled={isAsking}
+          isBusy={isAsking}
+          activeProvider={activeProvider}
+          onProviderChange={handleProviderChange}
+          ollamaEndpoint={settings.ollamaEndpoint}
+          onOllamaEndpointChange={(value) => setSetting('ollamaEndpoint', value)}
+          selectedModelName={settings.selectedModel}
+          models={models}
+          onModelChange={(value) => setSetting('selectedModel', value)}
+          onRefreshModels={handleRefreshModels}
+          isLoadingModels={isLoadingModels}
+          onTestConnection={handleTestConnection}
+          isTestingConnection={isTestingConnection}
+          statusMessage={statusMessage}
+          selectedAction={selectedAction}
+          onActionChange={setSelectedAction}
+          uploadedDocs={uploadedDocs}
+          includeCode={settings.includeCode}
+          includeSelection={settings.includeSelection}
+          includeUploads={settings.includeUploads}
+          streaming={settings.streaming}
+          onSettingChange={setSetting}
+          hasProvidedGroqModels={hasProvidedGroqModels}
+          providedGroqModelsCount={providedGroqModels.length}
+          onIncludeUploadsChange={(value) => setSetting('includeUploads', value)}
+          onUpload={handleUploadFiles}
+          onRemoveUpload={removeDoc}
+          isUploading={isUploading}
+        />
       </div>
     </aside>
   );

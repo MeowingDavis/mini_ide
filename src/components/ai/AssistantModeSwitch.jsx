@@ -1,7 +1,7 @@
 function AssistantModeSwitch({ mode, onChange, disabled }) {
   return (
-    <div className="ai-section">
-      <div className="ai-label">Assistant Mode</div>
+    <div className="ai-section ai-section-compact">
+      <div className="ai-label">Mode</div>
       <div className="ai-mode-switch">
         <button
           type="button"
@@ -17,7 +17,7 @@ function AssistantModeSwitch({ mode, onChange, disabled }) {
           onClick={() => onChange('edit')}
           disabled={disabled}
         >
-          Edit (Auto-Apply)
+          Suggest Edits
         </button>
       </div>
     </div>
