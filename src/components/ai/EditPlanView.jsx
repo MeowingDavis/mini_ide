@@ -16,7 +16,7 @@ function EditPlanView({
       <div className="ai-edit-header">
         <span className="ai-label">{title}</span>
         <button type="button" className="btn btn-primary" onClick={onApplyAll} disabled={disabled}>
-          Apply All
+          Apply All to Files
         </button>
       </div>
 
@@ -34,7 +34,7 @@ function EditPlanView({
                   onClick={() => onApplySingle(edit)}
                   disabled={disabled}
                 >
-                  Apply
+                  Apply to file
                 </button>
               </div>
               <pre className="ai-edit-preview">{edit.content}</pre>

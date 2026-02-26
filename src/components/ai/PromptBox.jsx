@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 function PromptBox({
   prompt,
@@ -35,6 +35,8 @@ function PromptBox({
   isUploading
 }) {
   const fileInputRef = useRef(null);
+  const optionsMenuRef = useRef(null);
+  const settingsMenuRef = useRef(null);
 
   const handleKeyDown = (event) => {
     if (isBusy) {
@@ -49,6 +51,38 @@ function PromptBox({
 
   const openFilePicker = () => {
     fileInputRef.current?.click();
+  };
+
+  useEffect(() => {
+    const handlePointerDown = (event) => {
+      const target = event.target;
+      const optionsMenu = optionsMenuRef.current;
+      const settingsMenu = settingsMenuRef.current;
+      const clickedInsideOptions = optionsMenu?.contains(target);
+      const clickedInsideSettings = settingsMenu?.contains(target);
+
+      if (!clickedInsideOptions && optionsMenu?.open) {
+        optionsMenu.open = false;
+      }
+
+      if (!clickedInsideSettings && settingsMenu?.open) {
+        settingsMenu.open = false;
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, []);
+
+  const handleMenuToggle = (menuType) => (event) => {
+    const currentMenu = event.currentTarget;
+    const otherMenu = menuType === 'options' ? settingsMenuRef.current : optionsMenuRef.current;
+
+    if (currentMenu.open && otherMenu?.open) {
+      otherMenu.open = false;
+    }
   };
 
   return (
@@ -120,7 +154,7 @@ function PromptBox({
           <option value="fix_console_error">Fix console error</option>
         </select>
 
-        <details className="ai-options-menu">
+        <details ref={optionsMenuRef} className="ai-options-menu" onToggle={handleMenuToggle('options')}>
           <summary className="ai-options-summary">Options</summary>
           <div className="ai-options-panel">
             <label className="ai-toggle" htmlFor="ai-include-code-inline">
@@ -162,7 +196,7 @@ function PromptBox({
           </div>
         </details>
 
-        <details className="ai-options-menu ai-settings-menu">
+        <details ref={settingsMenuRef} className="ai-options-menu ai-settings-menu" onToggle={handleMenuToggle('settings')}>
           <summary className="ai-options-summary">Settings</summary>
           <div className="ai-options-panel ai-settings-panel">
             <div className="ai-settings-provider">

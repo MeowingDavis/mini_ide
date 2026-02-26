@@ -21,6 +21,61 @@ function stripMainScriptTag(source) {
   );
 }
 
+function isLocalPath(value) {
+  const path = String(value || '').trim();
+  if (!path) return false;
+  if (path.startsWith('#')) return false;
+  if (/^(https?:|data:|blob:|mailto:|tel:)/i.test(path)) return false;
+  if (path.startsWith('//')) return false;
+  return true;
+}
+
+function normalizeProjectPath(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^\.\//, '')
+    .replace(/^\/+/, '');
+}
+
+function inlineLinkedProjectAssets(source, files) {
+  const inlinedCss = new Set();
+  const inlinedJs = new Set();
+  let next = source;
+
+  next = next.replace(/<link\b([^>]*?)href\s*=\s*["']([^"']+)["']([^>]*?)>/gi, (match, before, href, after) => {
+    const normalizedPath = normalizeProjectPath(href);
+    if (!isLocalPath(href) || !normalizedPath.toLowerCase().endsWith('.css')) {
+      return match;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(files, normalizedPath)) {
+      return match;
+    }
+
+    inlinedCss.add(normalizedPath);
+    return `<style data-inline-file="${normalizedPath}">${files[normalizedPath] || ''}</style>`;
+  });
+
+  next = next.replace(
+    /<script\b([^>]*?)src\s*=\s*["']([^"']+)["']([^>]*?)>\s*<\/script>/gi,
+    (match, before, src, after) => {
+      const normalizedPath = normalizeProjectPath(src);
+      if (!isLocalPath(src) || !/\.(js|mjs|cjs)$/i.test(normalizedPath)) {
+        return match;
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(files, normalizedPath)) {
+        return match;
+      }
+
+      inlinedJs.add(normalizedPath);
+      return `<script data-inline-file="${normalizedPath}">${escapeClosingScriptTag(files[normalizedPath] || '')}</script>`;
+    }
+  );
+
+  return { html: next, inlinedCss, inlinedJs };
+}
+
 function injectIntoHead(source, content) {
   if (/<\/head>/i.test(source)) {
     return source.replace(/<\/head>/i, `${content}\n</head>`);
@@ -44,7 +99,17 @@ function injectIntoBody(source, content) {
 function createBridgeScript() {
   return `(() => {
     const post = (type, payload = {}) => {
-      parent.postMessage({ source: 'mini-ide-preview', type, ...payload }, '*');
+      const message = { source: 'mini-ide-preview', type, ...payload };
+
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(message, '*');
+        } else if (window.parent && window.parent !== window) {
+          window.parent.postMessage(message, '*');
+        }
+      } catch {
+        // Ignore cross-window messaging errors.
+      }
     };
 
     const serialize = (value) => {
@@ -87,18 +152,36 @@ function createBridgeScript() {
 
 export function buildSrcDoc(files) {
   const html = files['index.html'] || '';
-  const css = files['styles.css'] || '';
-  const js = files['main.js'] || '';
   const bridge = escapeClosingScriptTag(createBridgeScript());
-  const scriptBlock = `<script>${bridge}</script>\n<script>${escapeClosingScriptTag(js)}</script>`;
+  const fallbackCss = files['styles.css'] || '';
+  const fallbackJs = files['main.js'] || '';
 
   if (isHtmlDocument(html)) {
     let doc = html;
+    let inlinedCss = new Set();
+    let inlinedJs = new Set();
 
-    doc = stripStylesheetLinkTag(doc);
-    doc = stripMainScriptTag(doc);
-    doc = injectIntoHead(doc, `<style>${css}</style>`);
-    doc = injectIntoBody(doc, scriptBlock);
+    const inlineResult = inlineLinkedProjectAssets(doc, files);
+    doc = inlineResult.html;
+    inlinedCss = inlineResult.inlinedCss;
+    inlinedJs = inlineResult.inlinedJs;
+
+    if (!inlinedCss.has('styles.css')) {
+      doc = stripStylesheetLinkTag(doc);
+    }
+    if (!inlinedJs.has('main.js')) {
+      doc = stripMainScriptTag(doc);
+    }
+
+    if (fallbackCss && !inlinedCss.has('styles.css')) {
+      doc = injectIntoHead(doc, `<style>${fallbackCss}</style>`);
+    }
+
+    const scriptParts = [`<script>${bridge}</script>`];
+    if (fallbackJs && !inlinedJs.has('main.js')) {
+      scriptParts.push(`<script>${escapeClosingScriptTag(fallbackJs)}</script>`);
+    }
+    doc = injectIntoBody(doc, scriptParts.join('\n'));
 
     return doc;
   }
@@ -108,11 +191,12 @@ export function buildSrcDoc(files) {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <style>${css}</style>
+    <style>${fallbackCss}</style>
   </head>
   <body>
     ${html}
-    ${scriptBlock}
+    <script>${bridge}</script>
+    <script>${escapeClosingScriptTag(fallbackJs)}</script>
   </body>
 </html>`;
 }

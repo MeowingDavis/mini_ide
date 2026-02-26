@@ -1,19 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import UiIcon from '../UiIcon';
 import PromptBox from './PromptBox';
 import ResponseView from './ResponseView';
-import EditPlanView from './EditPlanView';
 import useAiSettings from '../../hooks/useAiSettings';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
 import useUploadedDocs from '../../hooks/useUploadedDocs';
 import { buildAiPrompt } from '../../lib/buildAiPrompt';
+import { CHAT_MODE_EDIT_PROMPT, SYSTEM_PROMPT } from '../../lib/aiPrompts';
 import { tryExtractEdits } from '../../lib/aiEdits';
 import { chat, listModels, testConnection } from '../../lib/ollamaClient';
 import { useIdeContext } from '../../app/IdeContext';
-
-const SYSTEM_PROMPT =
-  'You are Leaf chat, an expert frontend coding assistant. Be concise. Default to short answers. When a user asks for a code change, give the suggested code first, then a brief note only if needed. Do not add filler like "let me know what you prefer."';
-const CHAT_MODE_EDIT_PROMPT =
-  'In chat mode: answer concisely. When the user asks for code changes, include a short suggested code snippet in the response and also include a JSON block with shape {"summary":"short","edits":[{"file":"index.html|styles.css|main.js","content":"full file text"}]} so the UI can offer manual Apply buttons. Do not ask for permission to manually edit vs JSON unless the user asks.';
 
 const ACTION_INSTRUCTIONS = {
   ask: '',
@@ -43,7 +39,7 @@ function parseModelList(value) {
     .filter(Boolean);
 }
 
-function AiPanel() {
+function AiPanel({ onClose, onZoom }) {
   const { settings, setSetting } = useAiSettings();
   const assistantMode = 'chat';
   const { uploadedDocs, addFiles, removeDoc } = useUploadedDocs();
@@ -159,11 +155,6 @@ function AiPanel() {
     },
     []
   );
-
-  const latestConsoleContext = useMemo(() => {
-    const recent = consoleLogs.slice(-5).map((entry) => `[${entry.level}] ${entry.text}`);
-    return recent.join('\n');
-  }, [consoleLogs]);
 
   const handleRefreshModels = async () => {
     if (activeProvider === 'groq' && hasProvidedGroqModels) {
@@ -425,15 +416,23 @@ function AiPanel() {
       }
 
       const parsed = tryExtractEdits(assistantText, fileNames);
+      let visibleAssistantText = assistantText || 'No response returned.';
+
       if (parsed.edits.length > 0) {
+        visibleAssistantText =
+          parsed.summary ||
+          `Suggested ${parsed.edits.length} file edit${parsed.edits.length > 1 ? 's' : ''}. Review and apply below.`;
+
         setPendingEdits(parsed.edits);
         setEditSummary(parsed.summary || 'Suggested edits ready to review.');
+        setResponse(visibleAssistantText);
         setStatusMessage(
           `Generated ${parsed.edits.length} suggested edit${parsed.edits.length > 1 ? 's' : ''}.`
         );
       } else {
         setPendingEdits([]);
         setEditSummary('');
+        setResponse(assistantText || 'No response returned.');
       }
 
       const nextHistory = [
@@ -448,7 +447,7 @@ function AiPanel() {
           ...prev,
           {
             role: 'assistant',
-            content: assistantText || 'No response returned.'
+            content: visibleAssistantText
           }
         ].slice(-24)
       );
@@ -510,6 +509,19 @@ function AiPanel() {
     }
   };
 
+  const handleCopyEdit = async (edit) => {
+    if (!edit?.content) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(edit.content);
+      setStatusMessage(`Copied ${edit.file}.`);
+    } catch {
+      setPanelError('Clipboard copy failed.');
+    }
+  };
+
   const handleProviderChange = (nextProvider) => {
     if (nextProvider === activeProvider) {
       return;
@@ -525,7 +537,26 @@ function AiPanel() {
   return (
     <aside className="panel panel-ai">
       <div className="panel-header">
-        <h2 className="panel-title">Leaf chat</h2>
+        <div className="panel-window-controls" role="toolbar" aria-label="Leaf chat window controls">
+          <button
+            type="button"
+            className="window-control window-control-close"
+            onClick={onClose}
+            aria-label="Close Leaf chat window"
+            title="Close Leaf chat window"
+          />
+          <button
+            type="button"
+            className="window-control window-control-zoom"
+            onClick={onZoom}
+            aria-label="Enlarge Leaf chat window"
+            title="Enlarge Leaf chat window"
+          />
+        </div>
+        <h2 className="panel-title">
+          <UiIcon name="chat" className="panel-title-icon" />
+          <span className="panel-title-text">Leaf chat</span>
+        </h2>
       </div>
 
       <div className="panel-body ai-panel-body">
@@ -535,31 +566,12 @@ function AiPanel() {
           isBusy={isAsking}
           onCopy={handleCopyResponse}
           mode={assistantMode}
+          pendingEdits={pendingEdits}
+          editSummary={editSummary}
+          onApplyAllEdits={applyAllEdits}
+          onApplySingleEdit={applySingleEdit}
+          onCopyEdit={handleCopyEdit}
         />
-
-        <EditPlanView
-          visible={pendingEdits.length > 0}
-          title="Suggested Edits"
-          planSummary={editSummary}
-          edits={pendingEdits}
-          onApplyAll={applyAllEdits}
-          onApplySingle={applySingleEdit}
-          disabled={isAsking}
-        />
-
-        {lastRuntimeError ? (
-          <div className="ai-runtime-context">
-            <span className="ai-label">Last Runtime Error</span>
-            <pre>{lastRuntimeError}</pre>
-          </div>
-        ) : null}
-
-        {latestConsoleContext ? (
-          <div className="ai-runtime-context">
-            <span className="ai-label">Recent Console</span>
-            <pre>{latestConsoleContext}</pre>
-          </div>
-        ) : null}
 
         {panelError ? <div className="ai-error">{panelError}</div> : null}
 

@@ -1,6 +1,17 @@
 import { useEffect, useRef } from 'react';
 
-function ResponseView({ messages = [], response, onCopy, isBusy, mode }) {
+function ResponseView({
+  messages = [],
+  response,
+  onCopy,
+  isBusy,
+  mode,
+  pendingEdits = [],
+  editSummary = '',
+  onApplySingleEdit,
+  onApplyAllEdits,
+  onCopyEdit
+}) {
   const label = mode === 'chat' ? 'Leaf chat' : 'Suggest Edits';
   const threadRef = useRef(null);
 
@@ -59,8 +70,45 @@ function ResponseView({ messages = [], response, onCopy, isBusy, mode }) {
               AI
             </div>
             <pre className="ai-chat-bubble ai-chat-bubble-streaming">
-              {response || 'Generating response...'}
+              {response?.trim().startsWith('{') ? 'Preparing suggested code...' : response || 'Generating response...'}
             </pre>
+          </div>
+        ) : null}
+
+        {!isBusy && pendingEdits.length > 0 ? (
+          <div className="ai-chat-inline-edits">
+            <div className="ai-chat-inline-edits-head">
+              <span className="ai-label">{editSummary || 'Suggested code'}</span>
+              <button type="button" className="btn btn-primary btn-small" onClick={onApplyAllEdits}>
+                Apply All to Files
+              </button>
+            </div>
+            <div className="ai-edit-list">
+              {pendingEdits.map((edit) => (
+                <div key={edit.file} className="ai-edit-item">
+                  <div className="ai-edit-item-head">
+                    <span className="ai-edit-file">{edit.file}</span>
+                    <div className="ai-chat-inline-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-small"
+                        onClick={() => onCopyEdit?.(edit)}
+                      >
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-small"
+                        onClick={() => onApplySingleEdit?.(edit)}
+                      >
+                        Apply to file
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="ai-edit-preview">{edit.content}</pre>
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
       </div>
