@@ -2,12 +2,30 @@ function formatCodeBlock(language, code) {
   return `\`\`\`${language}\n${code || ''}\n\`\`\``;
 }
 
+function inferCodeBlockLanguage(filePath) {
+  const name = String(filePath || '').toLowerCase();
+  if (name.endsWith('.html') || name.endsWith('.htm')) return 'html';
+  if (name.endsWith('.css')) return 'css';
+  if (name.endsWith('.js') || name.endsWith('.mjs') || name.endsWith('.cjs')) return 'javascript';
+  if (name.endsWith('.ts') || name.endsWith('.tsx')) return 'typescript';
+  if (name.endsWith('.jsx')) return 'jsx';
+  if (name.endsWith('.json')) return 'json';
+  if (name.endsWith('.md')) return 'markdown';
+  return 'text';
+}
+
 function formatFiles(files) {
-  return [
-    `index.html:\n${formatCodeBlock('html', files['index.html'])}`,
-    `styles.css:\n${formatCodeBlock('css', files['styles.css'])}`,
-    `main.js:\n${formatCodeBlock('javascript', files['main.js'])}`
-  ].join('\n\n');
+  const fileNames = Object.keys(files || {}).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+  );
+
+  if (fileNames.length === 0) {
+    return '(no files)';
+  }
+
+  return fileNames
+    .map((fileName) => `${fileName}:\n${formatCodeBlock(inferCodeBlockLanguage(fileName), files[fileName])}`)
+    .join('\n\n');
 }
 
 function formatConsoleContext(consoleLogs, lastRuntimeError) {

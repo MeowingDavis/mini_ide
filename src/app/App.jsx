@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import FileTabs from '../components/FileTabs';
 import FileExplorer from '../components/FileExplorer';
 import UiIcon from '../components/UiIcon';
@@ -419,6 +419,13 @@ function App() {
     setToolbarMessage(`Renamed ${filePath} to ${nextPath}.`);
   };
 
+  const handleRenameActiveFile = () => {
+    if (!activeFile) {
+      return;
+    }
+    handleRenameFile(activeFile);
+  };
+
   const handleMoveFile = (filePath, targetFolderPath = '') => {
     if (!filePath || !Object.prototype.hasOwnProperty.call(files, filePath)) {
       return;
@@ -529,24 +536,76 @@ function App() {
     setToolbarMessage(`Deleted folder ${folderPath}.`);
   };
 
-  const withGlobalDrag = (cursor, onMove) => {
+  const withGlobalDrag = (cursor, onMove, startEvent) => {
+    if (startEvent && typeof startEvent.button === 'number' && startEvent.button !== 0) {
+      return;
+    }
+
     const previousUserSelect = document.body.style.userSelect;
     const previousCursor = document.body.style.cursor;
     document.body.style.userSelect = 'none';
     document.body.style.cursor = cursor;
+
+    const dragShield = document.createElement('div');
+    dragShield.setAttribute('aria-hidden', 'true');
+    Object.assign(dragShield.style, {
+      position: 'fixed',
+      inset: '0',
+      zIndex: '9999',
+      cursor,
+      background: 'transparent'
+    });
+    document.body.appendChild(dragShield);
+
     let rafId = 0;
     let lastEvent = null;
+    let cleanedUp = false;
 
     const flushMove = () => {
       rafId = 0;
-      if (!lastEvent) {
+      if (!lastEvent || cleanedUp) {
         return;
       }
       onMove(lastEvent);
       lastEvent = null;
     };
 
+    const cleanup = () => {
+      if (cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
+
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', cleanup);
+      window.removeEventListener('blur', cleanup);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      dragShield.removeEventListener('mousemove', handleMouseMove);
+      dragShield.removeEventListener('mouseup', cleanup);
+      dragShield.remove();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        cleanup();
+      }
+    };
+
     const handleMouseMove = (event) => {
+      // Stop resizing immediately when the primary button is no longer pressed.
+      if ((event.buttons & 1) !== 1) {
+        cleanup();
+        return;
+      }
+
       event.preventDefault();
       lastEvent = event;
       if (!rafId) {
@@ -554,19 +613,12 @@ function App() {
       }
     };
 
-    const cleanup = () => {
-      document.body.style.userSelect = previousUserSelect;
-      document.body.style.cursor = previousCursor;
-      if (rafId) {
-        window.cancelAnimationFrame(rafId);
-        rafId = 0;
-      }
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', cleanup);
-    };
-
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', cleanup);
+    window.addEventListener('blur', cleanup);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    dragShield.addEventListener('mousemove', handleMouseMove);
+    dragShield.addEventListener('mouseup', cleanup);
   };
 
   const startColumnResize = (boundary) => (event) => {
@@ -596,7 +648,7 @@ function App() {
     const minEditor = 320;
     const minPreview = 320;
     const minConsole = 320;
-    const minAi = 400;
+    const minAi = 320;
 
     withGlobalDrag('col-resize', (moveEvent) => {
       const delta = moveEvent.clientX - startX;
@@ -626,7 +678,7 @@ function App() {
         ai: (nextPx.ai / total) * 100,
         console: (nextPx.console / total) * 100
       });
-    });
+    }, event);
   };
 
   const startPreviewConsoleResize = (event) => {
@@ -652,7 +704,7 @@ function App() {
       const delta = moveEvent.clientY - startY;
       const nextTop = Math.max(minTop, Math.min(startTop + delta, usableHeight - minBottom));
       setPreviewPaneRatio(nextTop / usableHeight);
-    });
+    }, event);
   };
 
   const startEditorExplorerResize = (event) => {
@@ -670,7 +722,7 @@ function App() {
     withGlobalDrag('col-resize', (moveEvent) => {
       const delta = moveEvent.clientX - startX;
       setEditorExplorerWidth(Math.max(minWidth, Math.min(startWidth + delta, maxWidth)));
-    });
+    }, event);
   };
 
   const handleEditorMount = (editor) => {
@@ -693,6 +745,53 @@ function App() {
     return model.getValueInRange(selection);
   };
 
+  const injectCodeIntoActiveFile = useCallback(
+    (snippet) => {
+      const content = String(snippet || '');
+      if (!content) {
+        return { ok: false, error: 'No code snippet to inject.' };
+      }
+
+      if (!activeFile) {
+        return { ok: false, error: 'No active file selected.' };
+      }
+
+      const editor = editorRef.current;
+      const model = editor?.getModel?.();
+
+      if (editor && model) {
+        const selection = editor.getSelection();
+        const position = editor.getPosition();
+        const targetRange =
+          selection && !selection.isEmpty()
+            ? selection
+            : {
+                startLineNumber: position?.lineNumber || 1,
+                startColumn: position?.column || 1,
+                endLineNumber: position?.lineNumber || 1,
+                endColumn: position?.column || 1
+              };
+
+        editor.executeEdits('ai-inline-inject', [
+          {
+            range: targetRange,
+            text: content,
+            forceMoveMarkers: true
+          }
+        ]);
+        editor.pushUndoStop();
+        editor.focus();
+        return { ok: true, file: activeFile };
+      }
+
+      const current = files[activeFile] ?? '';
+      const separator = current && !current.endsWith('\n') ? '\n' : '';
+      updateFile(activeFile, `${current}${separator}${content}`);
+      return { ok: true, file: activeFile };
+    },
+    [activeFile, files, updateFile]
+  );
+
   const ideContextValue = useMemo(
     () => ({
       files,
@@ -701,10 +800,11 @@ function App() {
       setActiveTab: setActiveFile,
       setFileContent: updateFile,
       getSelection,
+      injectCodeIntoActiveFile,
       consoleLogs: consoleEntries,
       lastRuntimeError
     }),
-    [files, fileNames, activeFile, updateFile, consoleEntries, lastRuntimeError]
+    [files, fileNames, activeFile, updateFile, injectCodeIntoActiveFile, consoleEntries, lastRuntimeError]
   );
 
   const visiblePanels = ['editor', 'preview', 'ai'].filter((panel) => panelVisibility[panel]);
@@ -770,7 +870,7 @@ function App() {
         const minByPanel = {
           editor: 320,
           preview: 320,
-          ai: 400,
+          ai: 320,
           console: 320
         };
 
@@ -991,6 +1091,7 @@ function App() {
                       onNewFile={handleCreateFile}
                       onNewFolder={handleCreateFolder}
                       onDeleteFile={handleDeleteActiveFile}
+                      onRenameActiveFile={handleRenameActiveFile}
                       onDeleteFileByPath={handleDeleteFileByPath}
                       onRenameFile={handleRenameFile}
                       onDeleteFolder={handleDeleteFolder}

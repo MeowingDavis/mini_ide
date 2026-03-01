@@ -57,6 +57,7 @@ function AiPanel({ onClose, onZoom }) {
     setActiveTab,
     setFileContent,
     getSelection,
+    injectCodeIntoActiveFile,
     consoleLogs,
     lastRuntimeError
   } = useIdeContext();
@@ -261,6 +262,44 @@ function AiPanel({ onClose, onZoom }) {
     setStatusMessage(`Applied edit to ${edit.file}.`);
   };
 
+  const swapInAlternative = (filePath, alternativeIndex) => {
+    const targetEdit = pendingEdits.find((edit) => edit.file === filePath);
+    const targetAlternatives = Array.isArray(targetEdit?.alternatives) ? targetEdit.alternatives : [];
+    const picked = targetAlternatives[alternativeIndex];
+
+    if (!picked || typeof picked.content !== 'string') {
+      return;
+    }
+
+    setPendingEdits((prev) => {
+      let replaced = false;
+      return prev.map((edit) => {
+        if (replaced || edit.file !== filePath) {
+          return edit;
+        }
+
+        const alternatives = Array.isArray(edit.alternatives) ? edit.alternatives : [];
+        const nextPicked = alternatives[alternativeIndex];
+        if (!nextPicked || typeof nextPicked.content !== 'string') {
+          return edit;
+        }
+
+        replaced = true;
+        return {
+          ...edit,
+          content: nextPicked.content,
+          activeLabel: nextPicked.label || `Suggestion ${alternativeIndex + 2}`,
+          alternatives: [
+            { label: edit.activeLabel || 'Suggestion 1', content: edit.content },
+            ...alternatives.filter((_, index) => index !== alternativeIndex)
+          ]
+        };
+      });
+    });
+
+    setStatusMessage(`Swapped in alternative for ${filePath}.`);
+  };
+
   const applyAllEdits = () => {
     if (pendingEdits.length === 0) {
       setPanelError('No valid edits to apply.');
@@ -423,7 +462,12 @@ function AiPanel({ onClose, onZoom }) {
           parsed.summary ||
           `Suggested ${parsed.edits.length} file edit${parsed.edits.length > 1 ? 's' : ''}. Review and apply below.`;
 
-        setPendingEdits(parsed.edits);
+        setPendingEdits(
+          parsed.edits.map((edit) => ({
+            ...edit,
+            activeLabel: edit.activeLabel || 'Suggestion 1'
+          }))
+        );
         setEditSummary(parsed.summary || 'Suggested edits ready to review.');
         setResponse(visibleAssistantText);
         setStatusMessage(
@@ -522,6 +566,23 @@ function AiPanel({ onClose, onZoom }) {
     }
   };
 
+  const handleInjectInlineCode = (snippet) => {
+    const content = String(snippet || '');
+    if (!content.trim()) {
+      setPanelError('No code block content to inject.');
+      return;
+    }
+
+    const result = injectCodeIntoActiveFile?.(content);
+    if (!result?.ok) {
+      setPanelError(result?.error || 'Could not inject code into the active file.');
+      return;
+    }
+
+    setPanelError('');
+    setStatusMessage(`Injected snippet into ${result.file || activeTab}.`);
+  };
+
   const handleProviderChange = (nextProvider) => {
     if (nextProvider === activeProvider) {
       return;
@@ -571,6 +632,9 @@ function AiPanel({ onClose, onZoom }) {
           onApplyAllEdits={applyAllEdits}
           onApplySingleEdit={applySingleEdit}
           onCopyEdit={handleCopyEdit}
+          onSwapInEdit={swapInAlternative}
+          onInjectInlineCode={handleInjectInlineCode}
+          activeFile={activeTab}
         />
 
         {panelError ? <div className="ai-error">{panelError}</div> : null}

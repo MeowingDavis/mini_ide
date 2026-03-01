@@ -1,13 +1,13 @@
 .app-shell {
   min-height: 100vh;
-  padding: var(--space-3);
+  padding: var(--space-4);
 }
 
 .workspace-grid {
-  height: calc(100vh - (var(--space-3) * 2) - 64px - var(--space-3));
+  height: calc(100vh - (var(--space-4) * 2) - 64px - var(--space-3));
   min-height: 620px;
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(320px, 0.9fr);
 }
 
@@ -67,14 +67,14 @@
 .console-surface {
   min-height: 0;
   border: 1px solid var(--border);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   overflow: hidden;
 }
 
 .editor-surface {
   flex: 1;
   border-top: 0;
-  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  border-radius: 0 0 var(--r-md) var(--r-md);
   background: #1e1e1e;
 }
 
@@ -118,7 +118,7 @@
 
 @media (max-width: 940px) {
   .app-shell {
-    padding: var(--space-2);
+    padding: var(--space-3);
   }
 
   .app-header {
