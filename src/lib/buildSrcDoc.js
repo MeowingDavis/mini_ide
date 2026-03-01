@@ -153,7 +153,7 @@ function stripLinkedScriptTag(source, filePath) {
   do {
     previous = next;
     next = next.replace(
-      /<script\b[^>]*src\s*=\s*["']([^"']+)["'][^>]*>\s*<\/script>/gi,
+      /<script\b[^>]*src\s*=\s*["']([^"']+)["'][^>]*>\s*<\/script\b[^>]*>/gi,
       (match, src) => {
         const normalizedPath = normalizeProjectPath(src);
         if (!isLocalPath(src) || normalizedPath !== filePath) {
