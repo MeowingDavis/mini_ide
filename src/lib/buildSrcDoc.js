@@ -148,7 +148,7 @@ function stripLinkedStylesheetTag(source, filePath) {
 
 function stripLinkedScriptTag(source, filePath) {
   return source.replace(
-    /<script\b[^>]*src\s*=\s*["']([^"']+)["'][^>]*>\s*<\/script\b[^>]*>/gi,
+    /<script\b[^>]*src\s*=\s*["']([^"']+)["'][^>]*>\s*<\/\s*script[^>]*>/gi,
     (match, src) => {
       const normalizedPath = normalizeProjectPath(src);
       if (!isLocalPath(src) || normalizedPath !== filePath) {
