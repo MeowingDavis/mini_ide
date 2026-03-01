@@ -20,6 +20,52 @@ import { IdeProvider } from './IdeContext';
 
 const DEBOUNCE_MS = 300;
 
+function createPreviewChannel() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function buildPreviewPopoutShell(targetOrigin) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mini IDE Preview</title>
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; background: #0f1119; }
+      #mini-ide-popout-frame {
+        border: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe id="mini-ide-popout-frame" title="Mini IDE Detached Preview" sandbox="allow-scripts"></iframe>
+    <script>
+      (() => {
+        const TARGET_ORIGIN = ${JSON.stringify(String(targetOrigin || '*'))};
+        const frame = document.getElementById('mini-ide-popout-frame');
+        window.addEventListener('message', (event) => {
+          if (event.source !== frame?.contentWindow) return;
+          if (event.origin !== 'null') return;
+          const payload = event.data;
+          if (!payload || payload.source !== 'mini-ide-preview') return;
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage(payload, TARGET_ORIGIN);
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>`;
+}
+
 function App() {
   const {
     files,
@@ -37,8 +83,19 @@ function App() {
     setAutoRun,
     resetProject
   } = useProjectStore();
+  const previewChannelRef = useRef(createPreviewChannel());
+  const previewTargetOrigin = typeof window === 'undefined' ? '*' : window.location.origin;
+  const buildPreviewDoc = useCallback(
+    (projectFiles) =>
+      buildSrcDoc(projectFiles, {
+        messageChannel: previewChannelRef.current,
+        targetOrigin: previewTargetOrigin
+      }),
+    [previewTargetOrigin]
+  );
+
   const [activeFile, setActiveFile] = useState(() => getDefaultActiveFile(DEFAULT_PROJECT_FILES));
-  const [srcDoc, setSrcDoc] = useState(() => buildSrcDoc(files));
+  const [srcDoc, setSrcDoc] = useState(() => buildPreviewDoc(files));
   const [consoleEntries, setConsoleEntries] = useState([]);
   const [lastRuntimeError, setLastRuntimeError] = useState('');
   const [toolbarMessage, setToolbarMessage] = useState(
@@ -138,10 +195,27 @@ function App() {
       return;
     }
 
-    setSrcDoc(buildSrcDoc(debouncedFiles));
-  }, [autoRun, debouncedFiles]);
+    setSrcDoc(buildPreviewDoc(debouncedFiles));
+  }, [autoRun, debouncedFiles, buildPreviewDoc]);
 
-  const writePreviewToPopout = (nextSrcDoc) => {
+  const ensurePopoutPreviewFrame = useCallback((popout) => {
+    if (!popout || popout.closed) {
+      return null;
+    }
+
+    let frame = popout.document.getElementById('mini-ide-popout-frame');
+    if (frame) {
+      return frame;
+    }
+
+    popout.document.open();
+    popout.document.write(buildPreviewPopoutShell(previewTargetOrigin));
+    popout.document.close();
+    frame = popout.document.getElementById('mini-ide-popout-frame');
+    return frame;
+  }, [previewTargetOrigin]);
+
+  const writePreviewToPopout = useCallback((nextSrcDoc) => {
     const popout = previewPopoutRef.current;
     if (!popout || popout.closed) {
       if (popout?.closed) {
@@ -151,16 +225,20 @@ function App() {
       return false;
     }
 
-    popout.document.open();
-    popout.document.write(nextSrcDoc);
-    popout.document.close();
+    const frame = ensurePopoutPreviewFrame(popout);
+    if (!frame) {
+      setIsPreviewPopoutOpen(false);
+      return false;
+    }
+
+    frame.srcdoc = nextSrcDoc;
     setIsPreviewPopoutOpen(true);
     return true;
-  };
+  }, [ensurePopoutPreviewFrame]);
 
   useEffect(() => {
     writePreviewToPopout(srcDoc);
-  }, [srcDoc]);
+  }, [srcDoc, writePreviewToPopout]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -201,14 +279,23 @@ function App() {
 
   useEffect(() => {
     const handleMessage = (event) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        if (event.source !== previewPopoutRef.current) {
-          return;
-        }
+      const fromDockedIframe = event.source === iframeRef.current?.contentWindow;
+      const fromPopoutWindow = event.source === previewPopoutRef.current;
+
+      if (!fromDockedIframe && !fromPopoutWindow) {
+        return;
+      }
+
+      if (fromDockedIframe && event.origin !== 'null') {
+        return;
+      }
+
+      if (fromPopoutWindow && event.origin !== previewTargetOrigin) {
+        return;
       }
 
       const payload = event.data;
-      if (!payload || payload.source !== 'mini-ide-preview') {
+      if (!payload || payload.source !== 'mini-ide-preview' || payload.channel !== previewChannelRef.current) {
         return;
       }
 
@@ -228,11 +315,11 @@ function App() {
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, []);
+  }, [previewTargetOrigin]);
 
   const handleRun = () => {
     setLastRuntimeError('');
-    setSrcDoc(buildSrcDoc(files));
+    setSrcDoc(buildPreviewDoc(files));
     setToolbarMessage('Preview refreshed from current files.');
   };
 
@@ -315,7 +402,7 @@ function App() {
     setActiveFile(getDefaultActiveFile(DEFAULT_PROJECT_FILES));
     setConsoleEntries([]);
     setLastRuntimeError('');
-    setSrcDoc(buildSrcDoc(DEFAULT_PROJECT_FILES));
+    setSrcDoc(buildPreviewDoc(DEFAULT_PROJECT_FILES));
     setToolbarMessage('Project reset to starter files.');
   };
 

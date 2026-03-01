@@ -11,7 +11,9 @@ function createDoc(fileName, content) {
 }
 
 function useUploadedDocs() {
-  const [uploadedDocs, setUploadedDocs] = useLocalStorageState(UPLOADED_DOCS_KEY, []);
+  const [uploadedDocs, setUploadedDocs] = useLocalStorageState(UPLOADED_DOCS_KEY, [], {
+    storage: 'session'
+  });
 
   const addFiles = async (fileList) => {
     const files = Array.from(fileList || []);

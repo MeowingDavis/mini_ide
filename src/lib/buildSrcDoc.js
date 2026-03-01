@@ -243,16 +243,19 @@ function injectIntoBody(source, content) {
   return `${source}\n${content}`;
 }
 
-function createBridgeScript() {
+function createBridgeScript(messageChannel = '', targetOrigin = '*') {
   return `(() => {
+    const CHANNEL = ${JSON.stringify(String(messageChannel || ''))};
+    const TARGET_ORIGIN = ${JSON.stringify(String(targetOrigin || '*'))};
+
     const post = (type, payload = {}) => {
-      const message = { source: 'mini-ide-preview', type, ...payload };
+      const message = { source: 'mini-ide-preview', channel: CHANNEL, type, ...payload };
 
       try {
         if (window.opener && !window.opener.closed) {
-          window.opener.postMessage(message, '*');
+          window.opener.postMessage(message, TARGET_ORIGIN);
         } else if (window.parent && window.parent !== window) {
-          window.parent.postMessage(message, '*');
+          window.parent.postMessage(message, TARGET_ORIGIN);
         }
       } catch {
         // Ignore cross-window messaging errors.
@@ -297,9 +300,11 @@ function createBridgeScript() {
   })();`;
 }
 
-export function buildSrcDoc(files) {
+export function buildSrcDoc(files, options = {}) {
+  const messageChannel = String(options.messageChannel || '');
+  const targetOrigin = String(options.targetOrigin || '*');
   const html = files['index.html'] || '';
-  const bridge = escapeClosingScriptTag(createBridgeScript());
+  const bridge = escapeClosingScriptTag(createBridgeScript(messageChannel, targetOrigin));
   const fallbackCss = files['styles.css'] || '';
   const fallbackJs = files['main.js'] || '';
   const moduleContext = buildModuleImportMap(files);

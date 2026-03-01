@@ -10,6 +10,19 @@ function createFriendlyError(message, details = '') {
   return error;
 }
 
+const GROQ_PROXY_TOKEN = String(import.meta.env.VITE_GROQ_PROXY_TOKEN || '').trim();
+
+function withGroqProxyHeaders(headers = {}) {
+  if (!GROQ_PROXY_TOKEN) {
+    return headers;
+  }
+
+  return {
+    ...headers,
+    'x-mini-ide-proxy-token': GROQ_PROXY_TOKEN
+  };
+}
+
 function isAbortError(error) {
   return error?.name === 'AbortError';
 }
@@ -19,7 +32,11 @@ async function toFriendlyHttpError(response, provider) {
 
   if (provider === 'groq') {
     if (response.status === 401) {
-      return createFriendlyError('Groq authentication failed on the server.', bodyText);
+      return createFriendlyError('Groq proxy authentication failed. Check GROQ_API_KEY and proxy token.', bodyText);
+    }
+
+    if (response.status === 403) {
+      return createFriendlyError('Groq proxy blocked this request origin/client.', bodyText);
     }
 
     if (response.status === 404) {
@@ -28,6 +45,10 @@ async function toFriendlyHttpError(response, provider) {
 
     if (response.status === 429) {
       return createFriendlyError('Groq rate limit reached. Try again shortly.', bodyText);
+    }
+
+    if (response.status === 413) {
+      return createFriendlyError('Groq proxy rejected an oversized request. Reduce prompt/context size.', bodyText);
     }
 
     if (response.status >= 500) {
@@ -97,7 +118,13 @@ async function listOllamaModels(endpoint) {
 }
 
 async function listGroqModels() {
-  const data = await fetchJson('/api/ai/groq/models', {}, 'groq');
+  const data = await fetchJson(
+    '/api/ai/groq/models',
+    {
+      headers: withGroqProxyHeaders()
+    },
+    'groq'
+  );
   return Array.isArray(data.models) ? data.models.filter(Boolean) : [];
 }
 
@@ -253,9 +280,9 @@ async function chatWithGroq(model, messages, options = {}) {
   try {
     response = await fetch('/api/ai/groq/chat', {
       method: 'POST',
-      headers: {
+      headers: withGroqProxyHeaders({
         'Content-Type': 'application/json'
-      },
+      }),
       body: JSON.stringify({
         model,
         messages,
