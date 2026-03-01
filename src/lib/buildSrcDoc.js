@@ -147,16 +147,24 @@ function stripLinkedStylesheetTag(source, filePath) {
 }
 
 function stripLinkedScriptTag(source, filePath) {
-  return source.replace(
-    /<script\b[^>]*src\s*=\s*["']([^"']+)["'][^>]*>\s*<\/script>/gi,
-    (match, src) => {
-      const normalizedPath = normalizeProjectPath(src);
-      if (!isLocalPath(src) || normalizedPath !== filePath) {
-        return match;
+  let next = source;
+  let previous;
+
+  do {
+    previous = next;
+    next = next.replace(
+      /<script\b[^>]*src\s*=\s*["']([^"']+)["'][^>]*>\s*<\/script>/gi,
+      (match, src) => {
+        const normalizedPath = normalizeProjectPath(src);
+        if (!isLocalPath(src) || normalizedPath !== filePath) {
+          return match;
+        }
+        return '';
       }
-      return '';
-    }
-  );
+    );
+  } while (next !== previous);
+
+  return next;
 }
 
 function inlineLinkedProjectAssets(source, files, moduleContext) {
