@@ -22,15 +22,15 @@
 
   --shadow-tight:
     0 1px 0 rgba(255, 255, 255, 0.03),
-    0 4px 12px rgba(0, 0, 0, 0.4);
+    0 8px 24px rgba(0, 0, 0, 0.34);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
-  --space-4: 14px;
-  --space-5: 18px;
-  --space-6: 24px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 28px;
 
   --fs-xs: 12px;
   --fs-sm: 13px;
@@ -41,5 +41,5 @@
   --font-sans: 'IBM Plex Sans', 'Avenir Next', 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
 
-  --focus-outline: 1px solid var(--accent-strong);
+  --focus-outline: 2px solid color-mix(in srgb, var(--accent-strong) 88%, #ffffff);
 }

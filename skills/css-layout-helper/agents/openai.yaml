@@ -1,0 +1,4 @@
+interface:
+  display_name: "CSS Layout Helper"
+  short_description: "Debug CSS alignment and spacing issues quickly"
+  default_prompt: "Use $css-layout-helper to diagnose this CSS layout issue and propose minimal, responsive fixes."

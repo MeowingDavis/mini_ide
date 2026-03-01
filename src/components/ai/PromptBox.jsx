@@ -91,7 +91,7 @@ function PromptBox({
         <label className="ai-label" htmlFor="ai-prompt-textarea">
           Message
         </label>
-        <span className="ai-prompt-hint">The assistant uses the active editor file as context.</span>
+        <span className="ai-prompt-hint">The assistant uses your project files as context when enabled.</span>
       </div>
       <textarea
         id="ai-prompt-textarea"

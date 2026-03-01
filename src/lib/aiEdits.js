@@ -6,6 +6,43 @@ function tryParseJson(text) {
   }
 }
 
+function normalizeAlternatives(edit, primaryContent) {
+  const rawAlternatives = Array.isArray(edit?.alternatives)
+    ? edit.alternatives
+    : Array.isArray(edit?.suggestions)
+      ? edit.suggestions
+      : [];
+
+  const seen = new Set([primaryContent]);
+
+  return rawAlternatives
+    .map((option, index) => {
+      if (typeof option === 'string') {
+        return {
+          label: `Suggestion ${index + 2}`,
+          content: option
+        };
+      }
+
+      if (option && typeof option === 'object' && typeof option.content === 'string') {
+        return {
+          label:
+            typeof option.label === 'string' && option.label.trim()
+              ? option.label.trim()
+              : `Suggestion ${index + 2}`,
+          content: option.content
+        };
+      }
+
+      return null;
+    })
+    .filter((option) => option && !seen.has(option.content))
+    .filter((option) => {
+      seen.add(option.content);
+      return true;
+    });
+}
+
 function extractJsonCandidate(text) {
   const fencedMatches = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)];
   for (const match of fencedMatches) {
@@ -40,10 +77,14 @@ export function parseEditResponse(responseText, allowedFiles) {
 
   const edits = Array.isArray(parsed.edits) ? parsed.edits : [];
   const normalizedEdits = edits
-    .map((edit) => ({
-      file: typeof edit.file === 'string' ? edit.file.trim() : '',
-      content: typeof edit.content === 'string' ? edit.content : ''
-    }))
+    .map((edit) => {
+      const content = typeof edit.content === 'string' ? edit.content : '';
+      return {
+        file: typeof edit.file === 'string' ? edit.file.trim() : '',
+        content,
+        alternatives: normalizeAlternatives(edit, content)
+      };
+    })
     .filter((edit) => edit.file && allowedFiles.includes(edit.file));
 
   if (normalizedEdits.length === 0) {
@@ -72,10 +113,14 @@ export function tryExtractEdits(responseText, allowedFiles) {
 
   const edits = Array.isArray(parsed.edits) ? parsed.edits : [];
   const normalizedEdits = edits
-    .map((edit) => ({
-      file: typeof edit.file === 'string' ? edit.file.trim() : '',
-      content: typeof edit.content === 'string' ? edit.content : ''
-    }))
+    .map((edit) => {
+      const content = typeof edit.content === 'string' ? edit.content : '';
+      return {
+        file: typeof edit.file === 'string' ? edit.file.trim() : '',
+        content,
+        alternatives: normalizeAlternatives(edit, content)
+      };
+    })
     .filter((edit) => edit.file && allowedFiles.includes(edit.file));
 
   return {

@@ -173,6 +173,7 @@ function FileExplorer({
   onNewFile,
   onNewFolder,
   onDeleteFile,
+  onRenameActiveFile,
   onDeleteFileByPath,
   onRenameFile,
   onDeleteFolder,
@@ -406,6 +407,15 @@ function FileExplorer({
       </div>
 
       <div className="explorer-footer">
+        <button
+          type="button"
+          className="btn btn-ghost btn-small"
+          onClick={onRenameActiveFile}
+          disabled={!activeFile}
+          title={activeFile ? `Rename ${activeFile}` : 'No file selected'}
+        >
+          Rename Selected
+        </button>
         <button
           type="button"
           className="btn btn-ghost btn-small"
