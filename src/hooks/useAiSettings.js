@@ -9,6 +9,7 @@ const DEFAULT_AI_SETTINGS = {
   provider: ENV_PROVIDER === 'groq' ? 'groq' : 'ollama',
   ollamaEndpoint: ENV_OLLAMA_ENDPOINT || 'http://localhost:11434',
   selectedModel: '',
+  rememberGroqApiKey: false,
   includeCode: true,
   includeSelection: true,
   includeUploads: true,

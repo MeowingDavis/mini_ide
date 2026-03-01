@@ -11,6 +11,11 @@ function PromptBox({
   onProviderChange,
   ollamaEndpoint,
   onOllamaEndpointChange,
+  groqApiKey,
+  onGrokApiKeyChange,
+  onClearGrokApiKey,
+  rememberGrokApiKey,
+  onRememberGrokApiKeyChange,
   selectedModelName,
   models,
   onModelChange,
@@ -229,6 +234,41 @@ function PromptBox({
                   disabled={disabled}
                 />
               </label>
+            ) : null}
+
+            {activeProvider === 'groq' ? (
+              <div className="ai-settings-field">
+                <span className="ai-label">Groq API Key</span>
+                <input
+                  className="input ai-input"
+                  value={groqApiKey}
+                  onChange={(event) => onGrokApiKeyChange(event.target.value)}
+                  placeholder="gsk_..."
+                  autoComplete="off"
+                  type="password"
+                  disabled={disabled}
+                />
+                <div className="ai-settings-actions">
+                  <label className="ai-toggle" htmlFor="ai-remember-grok-api-key">
+                    <input
+                      id="ai-remember-grok-api-key"
+                      type="checkbox"
+                      checked={rememberGrokApiKey}
+                      onChange={(event) => onRememberGrokApiKeyChange(event.target.checked)}
+                      disabled={disabled}
+                    />
+                    <span>Remember on this device</span>
+                  </label>
+                  <button type="button" className="btn btn-ghost" onClick={onClearGrokApiKey} disabled={disabled}>
+                    Clear key
+                  </button>
+                </div>
+                <div className="ai-status">
+                  {rememberGrokApiKey
+                    ? 'Stored in browser localStorage on this device.'
+                    : 'Stored in browser sessionStorage for this session only.'}
+                </div>
+              </div>
             ) : null}
 
             <label className="ai-settings-field">

@@ -4,6 +4,7 @@ import PromptBox from './PromptBox';
 import ResponseView from './ResponseView';
 import useAiSettings from '../../hooks/useAiSettings';
 import useDebouncedValue from '../../hooks/useDebouncedValue';
+import useGroqApiKey from '../../hooks/useGroqApiKey';
 import useUploadedDocs from '../../hooks/useUploadedDocs';
 import { buildAiPrompt } from '../../lib/buildAiPrompt';
 import { CHAT_MODE_EDIT_PROMPT, SYSTEM_PROMPT } from '../../lib/aiPrompts';
@@ -41,6 +42,13 @@ function parseModelList(value) {
 
 function AiPanel({ onClose, onZoom }) {
   const { settings, setSetting } = useAiSettings();
+  const rememberGroqApiKey = Boolean(settings.rememberGroqApiKey);
+  const {
+    apiKey: groqApiKey,
+    setApiKey: setGroqApiKey,
+    clearApiKey: clearGroqApiKey,
+    moveApiKeyToStorage
+  } = useGroqApiKey(rememberGroqApiKey);
   const assistantMode = 'chat';
   const { uploadedDocs, addFiles, removeDoc } = useUploadedDocs();
   const activeProvider = settings.provider === 'groq' ? 'groq' : 'ollama';
@@ -106,7 +114,7 @@ function AiPanel({ onClose, onZoom }) {
       setPanelError('');
 
       try {
-        const names = await listModels(activeProvider, debouncedOllamaEndpoint);
+        const names = await listModels(activeProvider, debouncedOllamaEndpoint, groqApiKey);
         if (cancelled) {
           return;
         }
@@ -143,6 +151,7 @@ function AiPanel({ onClose, onZoom }) {
   }, [
     activeProvider,
     debouncedOllamaEndpoint,
+    groqApiKey,
     hasProvidedGroqModels,
     providedGroqModels,
     setSetting,
@@ -182,7 +191,7 @@ function AiPanel({ onClose, onZoom }) {
     setIsLoadingModels(true);
 
     try {
-      const names = await listModels(activeProvider, settings.ollamaEndpoint);
+      const names = await listModels(activeProvider, settings.ollamaEndpoint, groqApiKey);
       setModels(names);
       if (names.length === 0) {
         setPanelError(
@@ -225,7 +234,7 @@ function AiPanel({ onClose, onZoom }) {
     setPanelError('');
     setStatusMessage('');
 
-    const result = await testConnection(activeProvider, settings.ollamaEndpoint);
+    const result = await testConnection(activeProvider, settings.ollamaEndpoint, groqApiKey);
 
     if (!result.ok) {
       setPanelError(result.error || 'Connection failed.');
@@ -410,7 +419,7 @@ function AiPanel({ onClose, onZoom }) {
           assistantText = await chat(
             activeProvider,
             settings.ollamaEndpoint,
-            '',
+            groqApiKey,
             settings.selectedModel,
             messages,
             {
@@ -426,7 +435,7 @@ function AiPanel({ onClose, onZoom }) {
           assistantText = await chat(
             activeProvider,
             settings.ollamaEndpoint,
-            '',
+            groqApiKey,
             settings.selectedModel,
             messages,
             {
@@ -443,7 +452,7 @@ function AiPanel({ onClose, onZoom }) {
         assistantText = await chat(
           activeProvider,
           settings.ollamaEndpoint,
-          '',
+          groqApiKey,
           settings.selectedModel,
           messages,
           {
@@ -595,6 +604,22 @@ function AiPanel({ onClose, onZoom }) {
     setModels([]);
   };
 
+  const handleRememberGroqApiKeyChange = (nextValue) => {
+    moveApiKeyToStorage(nextValue);
+    setSetting('rememberGroqApiKey', nextValue);
+    setStatusMessage(
+      nextValue
+        ? 'Groq API key will be remembered on this device.'
+        : 'Groq API key will be kept for this browser session only.'
+    );
+  };
+
+  const handleClearGroqApiKey = () => {
+    clearGroqApiKey();
+    setStatusMessage('Cleared Groq API key from browser storage.');
+    setPanelError('');
+  };
+
   return (
     <aside className="panel panel-ai">
       <div className="panel-header">
@@ -650,6 +675,11 @@ function AiPanel({ onClose, onZoom }) {
           onProviderChange={handleProviderChange}
           ollamaEndpoint={settings.ollamaEndpoint}
           onOllamaEndpointChange={(value) => setSetting('ollamaEndpoint', value)}
+          groqApiKey={groqApiKey}
+          onGrokApiKeyChange={setGroqApiKey}
+          onClearGrokApiKey={handleClearGroqApiKey}
+          rememberGrokApiKey={rememberGroqApiKey}
+          onRememberGrokApiKeyChange={handleRememberGroqApiKeyChange}
           selectedModelName={settings.selectedModel}
           models={models}
           onModelChange={(value) => setSetting('selectedModel', value)}

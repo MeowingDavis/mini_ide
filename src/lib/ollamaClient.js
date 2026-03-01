@@ -11,6 +11,21 @@ function createFriendlyError(message, details = '') {
 }
 
 const GROQ_PROXY_TOKEN = String(import.meta.env.VITE_GROQ_PROXY_TOKEN || '').trim();
+const GROQ_BASE_URL = normalizeEndpoint(
+  import.meta.env.VITE_GROQ_ENDPOINT || 'https://api.groq.com/openai/v1'
+);
+
+function normalizeApiKey(value) {
+  return String(value || '').trim();
+}
+
+function shouldUseDirectGroq(apiKey) {
+  return Boolean(normalizeApiKey(apiKey));
+}
+
+function isGroqProxyUrl(url) {
+  return String(url || '').startsWith('/api/ai/groq/');
+}
 
 function withGroqProxyHeaders(headers = {}) {
   if (!GROQ_PROXY_TOKEN) {
@@ -23,6 +38,19 @@ function withGroqProxyHeaders(headers = {}) {
   };
 }
 
+function withGroqAuthHeaders(headers = {}, apiKey = '') {
+  const normalizedApiKey = normalizeApiKey(apiKey);
+
+  if (normalizedApiKey) {
+    return {
+      ...headers,
+      Authorization: `Bearer ${normalizedApiKey}`
+    };
+  }
+
+  return withGroqProxyHeaders(headers);
+}
+
 function isAbortError(error) {
   return error?.name === 'AbortError';
 }
@@ -32,15 +60,15 @@ async function toFriendlyHttpError(response, provider) {
 
   if (provider === 'groq') {
     if (response.status === 401) {
-      return createFriendlyError('Groq proxy authentication failed. Check GROQ_API_KEY and proxy token.', bodyText);
+      return createFriendlyError('Groq authentication failed. Check your Groq API key.', bodyText);
     }
 
     if (response.status === 403) {
-      return createFriendlyError('Groq proxy blocked this request origin/client.', bodyText);
+      return createFriendlyError('Groq request was blocked (origin/client policy).', bodyText);
     }
 
     if (response.status === 404) {
-      return createFriendlyError('Groq proxy route not found. Restart the dev server.', bodyText);
+      return createFriendlyError('Groq endpoint not found. Check VITE_GROQ_ENDPOINT or proxy routes.', bodyText);
     }
 
     if (response.status === 429) {
@@ -48,11 +76,11 @@ async function toFriendlyHttpError(response, provider) {
     }
 
     if (response.status === 413) {
-      return createFriendlyError('Groq proxy rejected an oversized request. Reduce prompt/context size.', bodyText);
+      return createFriendlyError('Groq rejected an oversized request. Reduce prompt/context size.', bodyText);
     }
 
     if (response.status >= 500) {
-      return createFriendlyError('Server-side Groq proxy error. Check GROQ_API_KEY in .env.', bodyText);
+      return createFriendlyError('Groq request failed on the server side.', bodyText);
     }
 
     return createFriendlyError(`Groq request failed (${response.status}).`, bodyText);
@@ -80,7 +108,10 @@ async function fetchJson(url, options = {}, provider = 'ollama') {
     response = await fetch(url, options);
   } catch (error) {
     if (provider === 'groq') {
-      throw createFriendlyError('Could not reach the Groq proxy on this server.', error.message);
+      throw createFriendlyError(
+        isGroqProxyUrl(url) ? 'Could not reach the Groq proxy on this server.' : 'Could not reach the Groq API endpoint.',
+        error.message
+      );
     }
 
     throw createFriendlyError(
@@ -126,6 +157,27 @@ async function listGroqModels() {
     'groq'
   );
   return Array.isArray(data.models) ? data.models.filter(Boolean) : [];
+}
+
+async function listGroqModelsDirect(apiKey) {
+  if (!GROQ_BASE_URL) {
+    throw createFriendlyError('Groq endpoint is empty. Set VITE_GROQ_ENDPOINT.');
+  }
+
+  const data = await fetchJson(
+    `${GROQ_BASE_URL}/models`,
+    {
+      headers: withGroqAuthHeaders({}, apiKey)
+    },
+    'groq'
+  );
+
+  return Array.isArray(data.data)
+    ? data.data
+        .map((model) => model?.id)
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right))
+    : [];
 }
 
 function parseOllamaJsonlChunk(rawChunk, onToken, aggregatedRef) {
@@ -268,21 +320,29 @@ async function chatWithOllama(endpoint, model, messages, options = {}) {
   return readStreamingResponse(response, parseOllamaJsonlChunk, onToken);
 }
 
-async function chatWithGroq(model, messages, options = {}) {
+async function chatWithGroq(model, messages, apiKey = '', options = {}) {
   const { stream = true, onToken, signal } = options;
+  const useDirectRequest = shouldUseDirectGroq(apiKey);
 
   if (!model) {
     throw createFriendlyError('Select a Groq model before asking.');
   }
 
+  if (useDirectRequest && !GROQ_BASE_URL) {
+    throw createFriendlyError('Groq endpoint is empty. Set VITE_GROQ_ENDPOINT.');
+  }
+
   let response;
 
   try {
-    response = await fetch('/api/ai/groq/chat', {
+    response = await fetch(useDirectRequest ? `${GROQ_BASE_URL}/chat/completions` : '/api/ai/groq/chat', {
       method: 'POST',
-      headers: withGroqProxyHeaders({
-        'Content-Type': 'application/json'
-      }),
+      headers: withGroqAuthHeaders(
+        {
+          'Content-Type': 'application/json'
+        },
+        apiKey
+      ),
       body: JSON.stringify({
         model,
         messages,
@@ -295,7 +355,10 @@ async function chatWithGroq(model, messages, options = {}) {
       throw error;
     }
 
-    throw createFriendlyError('Could not connect to the Groq proxy.', error.message);
+    throw createFriendlyError(
+      useDirectRequest ? 'Could not connect to Groq API.' : 'Could not connect to the Groq proxy.',
+      error.message
+    );
   }
 
   if (!response.ok) {
@@ -310,19 +373,23 @@ async function chatWithGroq(model, messages, options = {}) {
   return readStreamingResponse(response, parseGroqSseChunk, onToken);
 }
 
-export async function listModels(provider, endpoint) {
+export async function listModels(provider, endpoint, apiKey = '') {
   const resolvedProvider = requireProvider(provider);
 
   if (resolvedProvider === 'groq') {
+    if (shouldUseDirectGroq(apiKey)) {
+      return listGroqModelsDirect(apiKey);
+    }
+
     return listGroqModels();
   }
 
   return listOllamaModels(endpoint);
 }
 
-export async function testConnection(provider, endpoint) {
+export async function testConnection(provider, endpoint, apiKey = '') {
   try {
-    const models = await listModels(provider, endpoint);
+    const models = await listModels(provider, endpoint, apiKey);
     return {
       ok: true,
       models,
@@ -337,11 +404,11 @@ export async function testConnection(provider, endpoint) {
   }
 }
 
-export async function chat(provider, endpoint, _apiKey, model, messages, options = {}) {
+export async function chat(provider, endpoint, apiKey, model, messages, options = {}) {
   const resolvedProvider = requireProvider(provider);
 
   if (resolvedProvider === 'groq') {
-    return chatWithGroq(model, messages, options);
+    return chatWithGroq(model, messages, apiKey, options);
   }
 
   return chatWithOllama(endpoint, model, messages, options);

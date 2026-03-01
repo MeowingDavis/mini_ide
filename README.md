@@ -19,7 +19,7 @@ The goal is fast iteration in one screen: edit files, run preview, inspect outpu
 - Live preview with auto-run or manual run
 - Detached preview window support
 - Resizable workspace panels (editor, preview, console, AI chat)
-- AI provider support with `Ollama` (local) and `Groq` (server proxy)
+- AI provider support with `Ollama` (local) and `Groq` (direct API key or local proxy fallback)
 - AI inline code injection into the current editor file
 
 ## Run
@@ -36,11 +36,34 @@ npm run build
 npm run preview
 ```
 
-## AI/API Notes
+## Local-Only AI Setup
 
-- Ollama calls go directly to your configured Ollama endpoint.
-- Groq calls are routed through Vite middleware (`/api/ai/groq/*`) so API keys stay on the server side.
-- Optionally set `VITE_GROQ_PROXY_TOKEN` in the frontend and `GROQ_PROXY_TOKEN` on the server to require token auth.
+This app is intended to run locally (`npm run dev` / `npm run preview`).
+
+### Ollama
+
+- In `Leaf chat -> Settings`, choose `Ollama`.
+- Set your endpoint (default: `http://localhost:11434`).
+- Use `Test connection` to verify and load local models.
+
+### Groq (User-Provided API Key)
+
+- In `Leaf chat -> Settings`, choose `Groq`.
+- Paste your Groq API key (`gsk_...`) in the `Groq API Key` field.
+- Click `Test connection` to load models from Groq.
+- By default, the key is stored in `sessionStorage` (cleared when the browser session ends).
+- Enable `Remember on this device` to store it in `localStorage`.
+- Use `Clear key` to remove it from both session and local storage.
+
+### Key Handling Notes
+
+- Keys are not sent to your own backend by default when direct Groq mode is used.
+- Keys are never written to git if you keep using the in-app settings flow.
+- `.env` files are already ignored by git in this repo.
+
+## Optional Groq Proxy Mode (Fallback)
+
+If no Groq key is entered in settings, the app falls back to the local Vite proxy routes (`/api/ai/groq/*`), which can use a server-side `GROQ_API_KEY`.
 
 ## Groq Proxy Security
 
@@ -52,3 +75,10 @@ The Vite Groq proxy is local-only by default and now supports request hardening 
 - `VITE_GROQ_PROXY_TOKEN` sends the token from the browser client.
 - `GROQ_PROXY_MAX_BODY_BYTES` caps JSON request body size (default `262144`).
 - `GROQ_PROXY_RATE_LIMIT_MAX` and `GROQ_PROXY_RATE_LIMIT_WINDOW_MS` set per-IP rate limits.
+
+## Environment Variables
+
+- `VITE_AI_PROVIDER`: optional default provider (`ollama` or `groq`)
+- `VITE_OLLAMA_ENDPOINT`: optional default Ollama endpoint
+- `VITE_GROQ_ENDPOINT`: optional Groq API base URL (default: `https://api.groq.com/openai/v1`)
+- `VITE_GROQ_MODELS` / `VITE_ONLINE_MODELS`: optional comma/newline-separated model list
