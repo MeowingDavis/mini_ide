@@ -42,12 +42,6 @@ function normalizeProjectPath(value) {
   return normalizedParts.join('/');
 }
 
-function collectTagAttributes(before, after) {
-  const raw = `${before || ''}${after || ''}`;
-  const trimmed = raw.replace(/^\s+|\s+$/g, '');
-  return trimmed ? ` ${trimmed}` : '';
-}
-
 function isScriptFilePath(path) {
   return /\.(js|mjs|cjs)$/i.test(String(path || ''));
 }
@@ -132,69 +126,406 @@ function buildModuleImportMap(files) {
   return { imports, rewrittenByPath };
 }
 
-function isModuleScriptTagAttributes(attributes) {
-  return /\btype\s*=\s*(?:(["'])module\1|module\b)/i.test(attributes);
+function isHtmlWhitespace(value) {
+  return value === ' ' || value === '\t' || value === '\n' || value === '\r' || value === '\f';
+}
+
+function findTagEnd(source, fromIndex) {
+  let quote = '';
+  for (let index = fromIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) {
+      if (char === quote) {
+        quote = '';
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === '>') {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function parseTagAt(source, startIndex) {
+  if (source[startIndex] !== '<') {
+    return null;
+  }
+
+  const nextChar = source[startIndex + 1];
+  if (!nextChar || nextChar === '!' || nextChar === '?') {
+    return null;
+  }
+
+  let cursor = startIndex + 1;
+  let isClosing = false;
+  if (source[cursor] === '/') {
+    isClosing = true;
+    cursor += 1;
+  }
+
+  while (cursor < source.length && isHtmlWhitespace(source[cursor])) {
+    cursor += 1;
+  }
+
+  const nameStart = cursor;
+  while (cursor < source.length) {
+    const char = source[cursor];
+    if (
+      isHtmlWhitespace(char) ||
+      char === '/' ||
+      char === '>' ||
+      char === '"' ||
+      char === "'" ||
+      char === '='
+    ) {
+      break;
+    }
+    cursor += 1;
+  }
+
+  if (cursor === nameStart) {
+    return null;
+  }
+
+  const endIndex = findTagEnd(source, cursor);
+  if (endIndex === -1) {
+    return null;
+  }
+
+  const attributesSource = source.slice(cursor, endIndex);
+  let tailIndex = endIndex - 1;
+  while (tailIndex > cursor && isHtmlWhitespace(source[tailIndex])) {
+    tailIndex -= 1;
+  }
+
+  return {
+    start: startIndex,
+    end: endIndex,
+    name: source.slice(nameStart, cursor).toLowerCase(),
+    isClosing,
+    isSelfClosing: !isClosing && source[tailIndex] === '/',
+    attributesSource
+  };
+}
+
+function findNextTag(source, fromIndex = 0) {
+  let cursor = fromIndex;
+  while (cursor < source.length) {
+    const openIndex = source.indexOf('<', cursor);
+    if (openIndex === -1) {
+      return null;
+    }
+
+    const nextChar = source[openIndex + 1];
+    if (nextChar === '!') {
+      if (source.startsWith('<!--', openIndex)) {
+        const commentEnd = source.indexOf('-->', openIndex + 4);
+        cursor = commentEnd === -1 ? source.length : commentEnd + 3;
+        continue;
+      }
+      const specialEnd = findTagEnd(source, openIndex + 2);
+      cursor = specialEnd === -1 ? source.length : specialEnd + 1;
+      continue;
+    }
+
+    if (nextChar === '?') {
+      const processingEnd = findTagEnd(source, openIndex + 2);
+      cursor = processingEnd === -1 ? source.length : processingEnd + 1;
+      continue;
+    }
+
+    const tag = parseTagAt(source, openIndex);
+    if (tag) {
+      return tag;
+    }
+
+    cursor = openIndex + 1;
+  }
+
+  return null;
+}
+
+function parseTagAttributes(attributesSource) {
+  const attributes = [];
+  let cursor = 0;
+
+  while (cursor < attributesSource.length) {
+    while (cursor < attributesSource.length && isHtmlWhitespace(attributesSource[cursor])) {
+      cursor += 1;
+    }
+
+    if (cursor >= attributesSource.length || attributesSource[cursor] === '/') {
+      break;
+    }
+
+    const nameStart = cursor;
+    while (cursor < attributesSource.length) {
+      const char = attributesSource[cursor];
+      if (isHtmlWhitespace(char) || char === '=' || char === '>') {
+        break;
+      }
+      cursor += 1;
+    }
+
+    if (cursor === nameStart) {
+      cursor += 1;
+      continue;
+    }
+
+    const name = attributesSource.slice(nameStart, cursor);
+
+    while (cursor < attributesSource.length && isHtmlWhitespace(attributesSource[cursor])) {
+      cursor += 1;
+    }
+
+    let value = null;
+    if (attributesSource[cursor] === '=') {
+      cursor += 1;
+      while (cursor < attributesSource.length && isHtmlWhitespace(attributesSource[cursor])) {
+        cursor += 1;
+      }
+
+      if (attributesSource[cursor] === '"' || attributesSource[cursor] === "'") {
+        const quote = attributesSource[cursor];
+        cursor += 1;
+        const valueStart = cursor;
+        while (cursor < attributesSource.length && attributesSource[cursor] !== quote) {
+          cursor += 1;
+        }
+        value = attributesSource.slice(valueStart, cursor);
+        if (cursor < attributesSource.length) {
+          cursor += 1;
+        }
+      } else {
+        const valueStart = cursor;
+        while (cursor < attributesSource.length && !isHtmlWhitespace(attributesSource[cursor]) && attributesSource[cursor] !== '>') {
+          cursor += 1;
+        }
+        value = attributesSource.slice(valueStart, cursor);
+      }
+    }
+
+    attributes.push({
+      nameLower: name.toLowerCase(),
+      raw: attributesSource.slice(nameStart, cursor),
+      value
+    });
+  }
+
+  return attributes;
+}
+
+function getTagAttributeValue(attributes, targetName) {
+  for (const attribute of attributes) {
+    if (attribute.nameLower === targetName) {
+      return attribute.value == null ? '' : attribute.value;
+    }
+  }
+  return null;
+}
+
+function buildTagAttributes(attributes, omittedNames = []) {
+  const omitted = new Set(omittedNames);
+  const kept = attributes
+    .filter((attribute) => !omitted.has(attribute.nameLower))
+    .map((attribute) => String(attribute.raw || '').trim())
+    .filter(Boolean);
+  return kept.length > 0 ? ` ${kept.join(' ')}` : '';
+}
+
+function isModuleScriptTag(attributes) {
+  const type = getTagAttributeValue(attributes, 'type');
+  return String(type || '').trim().toLowerCase() === 'module';
+}
+
+function findClosingScriptTag(source, fromIndex) {
+  const lowerSource = source.toLowerCase();
+  let cursor = fromIndex;
+
+  while (cursor < source.length) {
+    const closeStart = lowerSource.indexOf('</script', cursor);
+    if (closeStart === -1) {
+      return null;
+    }
+
+    const closeTag = parseTagAt(source, closeStart);
+    if (closeTag && closeTag.isClosing && closeTag.name === 'script') {
+      return closeTag;
+    }
+
+    cursor = closeStart + 1;
+  }
+
+  return null;
+}
+
+function applyTagEdits(source, edits) {
+  if (!edits.length) {
+    return source;
+  }
+
+  const sorted = [...edits].sort((left, right) => left.start - right.start);
+  let cursor = 0;
+  let result = '';
+
+  for (const edit of sorted) {
+    if (edit.start < cursor) {
+      continue;
+    }
+    result += source.slice(cursor, edit.start);
+    result += edit.replacement;
+    cursor = edit.end;
+  }
+
+  result += source.slice(cursor);
+  return result;
 }
 
 function stripLinkedStylesheetTag(source, filePath) {
-  return source.replace(/<link\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi, (match, href) => {
-    const normalizedPath = normalizeProjectPath(href);
-    if (!isLocalPath(href) || normalizedPath !== filePath) {
-      return match;
+  const html = String(source || '');
+  const edits = [];
+  let cursor = 0;
+
+  while (true) {
+    const tag = findNextTag(html, cursor);
+    if (!tag) {
+      break;
     }
-    return '';
-  });
+    cursor = tag.end + 1;
+
+    if (tag.isClosing || tag.name !== 'link') {
+      continue;
+    }
+
+    const attributes = parseTagAttributes(tag.attributesSource);
+    const href = getTagAttributeValue(attributes, 'href');
+    if (href == null) {
+      continue;
+    }
+
+    const normalizedPath = normalizeProjectPath(href);
+    if (isLocalPath(href) && normalizedPath === filePath) {
+      edits.push({ start: tag.start, end: tag.end + 1, replacement: '' });
+    }
+  }
+
+  return applyTagEdits(html, edits);
 }
 
 function stripLinkedScriptTag(source, filePath) {
-  return source.replace(
-    /<script\b[^>]*src\s*=\s*["']([^"']+)["'][^>]*>\s*<\/script>/gi,
-    (match, src) => {
-      const normalizedPath = normalizeProjectPath(src);
-      if (!isLocalPath(src) || normalizedPath !== filePath) {
-        return match;
-      }
-      return '';
+  const html = String(source || '');
+  const edits = [];
+  let cursor = 0;
+
+  while (true) {
+    const tag = findNextTag(html, cursor);
+    if (!tag) {
+      break;
     }
-  );
+
+    cursor = tag.end + 1;
+    if (tag.isClosing || tag.name !== 'script') {
+      continue;
+    }
+
+    const closeTag = tag.isSelfClosing ? null : findClosingScriptTag(html, tag.end + 1);
+    if (closeTag) {
+      cursor = closeTag.end + 1;
+    }
+
+    const attributes = parseTagAttributes(tag.attributesSource);
+    const src = getTagAttributeValue(attributes, 'src');
+    if (src == null) {
+      continue;
+    }
+
+    const normalizedPath = normalizeProjectPath(src);
+    if (!isLocalPath(src) || normalizedPath !== filePath) {
+      continue;
+    }
+
+    edits.push({
+      start: tag.start,
+      end: (closeTag ? closeTag.end : tag.end) + 1,
+      replacement: ''
+    });
+  }
+
+  return applyTagEdits(html, edits);
 }
 
 function inlineLinkedProjectAssets(source, files, moduleContext) {
+  const html = String(source || '');
   const inlinedCss = new Set();
   const inlinedJs = new Set();
   const inlinedModuleEntries = new Set();
-  let next = source;
+  const edits = [];
+  let cursor = 0;
 
-  next = next.replace(/<link\b([^>]*?)href\s*=\s*["']([^"']+)["']([^>]*?)>/gi, (match, before, href, after) => {
-    const normalizedPath = normalizeProjectPath(href);
-    if (!isLocalPath(href) || !normalizedPath.toLowerCase().endsWith('.css')) {
-      return match;
+  while (true) {
+    const tag = findNextTag(html, cursor);
+    if (!tag) {
+      break;
     }
 
-    if (!Object.prototype.hasOwnProperty.call(files, normalizedPath)) {
-      return match;
+    cursor = tag.end + 1;
+    if (tag.isClosing) {
+      continue;
     }
 
-    inlinedCss.add(normalizedPath);
-    const attrs = collectTagAttributes(before, after);
-    return `<style data-inline-file="${normalizedPath}"${attrs}>${files[normalizedPath] || ''}</style>`;
-  });
-
-  next = next.replace(
-    /<script\b([^>]*?)src\s*=\s*["']([^"']+)["']([^>]*?)>\s*<\/script>/gi,
-    (match, before, src, after) => {
-      const normalizedPath = normalizeProjectPath(src);
-      if (!isLocalPath(src) || !/\.(js|mjs|cjs)$/i.test(normalizedPath)) {
-        return match;
+    if (tag.name === 'link') {
+      const attributes = parseTagAttributes(tag.attributesSource);
+      const href = getTagAttributeValue(attributes, 'href');
+      if (href == null) {
+        continue;
       }
 
+      const normalizedPath = normalizeProjectPath(href);
+      if (!isLocalPath(href) || !normalizedPath.toLowerCase().endsWith('.css')) {
+        continue;
+      }
       if (!Object.prototype.hasOwnProperty.call(files, normalizedPath)) {
-        return match;
+        continue;
+      }
+
+      inlinedCss.add(normalizedPath);
+      const attrs = buildTagAttributes(attributes, ['href']);
+      edits.push({
+        start: tag.start,
+        end: tag.end + 1,
+        replacement: `<style data-inline-file="${normalizedPath}"${attrs}>${files[normalizedPath] || ''}</style>`
+      });
+      continue;
+    }
+
+    if (tag.name === 'script') {
+      const closeTag = tag.isSelfClosing ? null : findClosingScriptTag(html, tag.end + 1);
+      if (closeTag) {
+        cursor = closeTag.end + 1;
+      }
+
+      const attributes = parseTagAttributes(tag.attributesSource);
+      const src = getTagAttributeValue(attributes, 'src');
+      if (src == null) {
+        continue;
+      }
+
+      const normalizedPath = normalizeProjectPath(src);
+      if (!isLocalPath(src) || !/\.(js|mjs|cjs)$/i.test(normalizedPath)) {
+        continue;
+      }
+      if (!Object.prototype.hasOwnProperty.call(files, normalizedPath) || !closeTag) {
+        continue;
       }
 
       inlinedJs.add(normalizedPath);
-      const attrs = collectTagAttributes(before, after);
-      const isModuleScript = isModuleScriptTagAttributes(attrs);
+      const attrs = buildTagAttributes(attributes, ['src']);
+      const isModuleScript = isModuleScriptTag(attributes);
       const scriptContent =
         isModuleScript && moduleContext?.rewrittenByPath?.[normalizedPath] != null
           ? moduleContext.rewrittenByPath[normalizedPath]
@@ -202,13 +533,18 @@ function inlineLinkedProjectAssets(source, files, moduleContext) {
       if (isModuleScript) {
         inlinedModuleEntries.add(normalizedPath);
       }
-      return `<script data-inline-file="${normalizedPath}"${attrs}>${escapeClosingScriptTag(
-        scriptContent
-      )}</script>`;
-    }
-  );
 
-  return { html: next, inlinedCss, inlinedJs, inlinedModuleEntries };
+      edits.push({
+        start: tag.start,
+        end: closeTag.end + 1,
+        replacement: `<script data-inline-file="${normalizedPath}"${attrs}>${escapeClosingScriptTag(
+          scriptContent
+        )}</script>`
+      });
+    }
+  }
+
+  return { html: applyTagEdits(html, edits), inlinedCss, inlinedJs, inlinedModuleEntries };
 }
 
 function injectIntoHead(source, content) {
